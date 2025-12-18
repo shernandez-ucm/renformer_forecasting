@@ -32,6 +32,7 @@ class TransformerBlock(nn.Module):
     num_heads: int
     mlp_dim: int
     dropout_rate: float
+    input_dim:int
 
     @nn.compact
     def __call__(self, x, train: bool):
@@ -42,10 +43,10 @@ class TransformerBlock(nn.Module):
         )(x, deterministic=not train)
         x = nn.LayerNorm()(x + attn)
 
-        #y = nn.Dense(self.mlp_dim)(x)
-        #y = nn.gelu(y)
-        #y = nn.Dropout(self.dropout_rate)(y, deterministic=not train)
-        y = nn.Dense(self.d_model)(x)
+        y = nn.Dense(self.mlp_dim)(x)
+        y = nn.gelu(y)
+        y = nn.Dropout(self.dropout_rate)(y, deterministic=not train)
+        y = nn.Dense(self.input_dim)(y)
         x = nn.LayerNorm()(x + y)
         return x
 
@@ -65,6 +66,7 @@ class TransformerEncoder(nn.Module):
     mlp_dim: int
     dropout_rate: float
     max_len: int
+    input_dim: int
 
     @nn.compact
     def __call__(self, x, train: bool):
@@ -74,16 +76,12 @@ class TransformerEncoder(nn.Module):
         x = PositionalEncoding(self.max_len, self.d_model)(x)
 
         for _ in range(self.num_layers):
-                        x = TransformerBlock(
+            x = TransformerBlock(
                 self.d_model,
                 self.num_heads,
                 self.mlp_dim,
                 self.dropout_rate,
-            )(x, train)(
-                self.d_model,
-                self.num_heads,
-                self.mlp_dim,
-                self.dropout_rate,
+                self.input_dim
             )(x, train)
         return x
 
