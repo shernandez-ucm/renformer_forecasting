@@ -192,7 +192,6 @@ def train(
         history["train_loss"].append(t_loss)
         history["val_loss"].append(v_loss)
 
-        if epoch % 5 == 0 or epoch == 1:
-            print(f"Epoch {epoch:03d}/{epochs} | train NLL {t_loss:.4f} | val NLL {v_loss:.4f}")
+        print(f"Epoch {epoch:03d}/{epochs} | train NLL {t_loss:.4f} | val NLL {v_loss:.4f}")
 
     return params, history
