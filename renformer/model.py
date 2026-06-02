@@ -71,7 +71,15 @@ class TimeSeriesTransformer(nn.Module):
     REnFormer: global Transformer for probabilistic multi-site forecasting.
 
     Input  shape: (batch, seq_len, in_features)
+        channel 0          = the target power series
+        channels 1..in_features-1 = exogenous/calendar features (optional)
     Output: (mean, log_std) each of shape (batch, horizon, out_features)
+
+    With instance_norm=True the target channel is normalized per window
+    (reversible instance norm, à la TimesFM's RevIN): each window is centred
+    by its own mean/std before encoding and the Gaussian head outputs are
+    mapped back to raw units. This removes the need for a global z-score and
+    is robust to per-window level shifts.
     """
     d_model: int
     num_heads: int
@@ -80,10 +88,20 @@ class TimeSeriesTransformer(nn.Module):
     dropout_rate: float
     max_len: int
     horizon: int
-    out_features: int
+    out_features: int = 1
+    in_features: int = 1
+    instance_norm: bool = True
 
     @nn.compact
     def __call__(self, x, train: bool = True):
+        # Per-window RevIN on the target channel (channel 0); leave exogenous
+        # calendar features untouched.
+        if self.instance_norm:
+            power = x[..., :1]
+            mu = jnp.mean(power, axis=1, keepdims=True)            # (B, 1, 1)
+            sd = jnp.std(power, axis=1, keepdims=True) + 1e-5
+            x = jnp.concatenate([(power - mu) / sd, x[..., 1:]], axis=-1)
+
         enc = TransformerEncoder(
             self.d_model,
             self.num_heads,
@@ -98,4 +116,8 @@ class TimeSeriesTransformer(nn.Module):
         out_dim = self.horizon * self.out_features
         mean = nn.Dense(out_dim)(summary).reshape(-1, self.horizon, self.out_features)
         log_std = nn.Dense(out_dim)(summary).reshape(-1, self.horizon, self.out_features)
+
+        if self.instance_norm:
+            mean = mean * sd + mu              # back to raw units
+            log_std = log_std + jnp.log(sd)    # std scales with the window std
         return mean, log_std

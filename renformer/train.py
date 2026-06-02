@@ -3,6 +3,8 @@ import jax.numpy as jnp
 import optax
 import numpy as np
 
+from renformer.sen_data import calendar_features
+
 EPSILON_MW = 0.1   # intermittency threshold (raw MW, paper Section 3)
 
 
@@ -58,7 +60,8 @@ class SENDataset:
     (site, time) pairs on the fly — avoids the ~14 GB materialization of all
     windows.
     """
-    def __init__(self, df_norm, df_raw, lookback=168, horizon=24):
+    def __init__(self, df_norm, df_raw, lookback=168, horizon=24,
+                 times=None, add_time_features=False, raw_input=False):
         # (S, T) layout for fast per-site slicing
         self.arr_norm = df_norm.values.T.astype(np.float32)
         self.arr_raw  = df_raw.values.T.astype(np.float32)
@@ -68,6 +71,18 @@ class SENDataset:
         self.S, self.T = self.arr_norm.shape
         # number of valid start positions (one window = lookback + horizon)
         self.n_windows = self.T - lookback - horizon + 1
+
+        # Power channel fed to the model: raw (let the model's RevIN normalize)
+        # or the pre-computed global z-score (legacy behaviour).
+        self.arr_pow = self.arr_raw if raw_input else self.arr_norm
+
+        # Optional calendar features, shared across all sites: (T, 4)
+        if add_time_features:
+            if times is None:
+                raise ValueError("add_time_features=True requires `times` (DatetimeIndex)")
+            self.tf = calendar_features(times)
+        else:
+            self.tf = None
 
     def __len__(self):
         return self.S * self.n_windows
@@ -86,10 +101,15 @@ class SENDataset:
             yield self._fetch(all_s[sl], all_t[sl])
 
     def _fetch(self, s_idx, t_idx):
-        X = np.stack([
-            self.arr_norm[s, t: t + self.lookback]
+        Xp = np.stack([
+            self.arr_pow[s, t: t + self.lookback]
             for s, t in zip(s_idx, t_idx)
-        ])[:, :, np.newaxis]                              # (B, L, 1)
+        ])                                                # (B, L)
+        if self.tf is not None:
+            Xt = np.stack([self.tf[t: t + self.lookback] for t in t_idx])  # (B, L, 4)
+            X = np.concatenate([Xp[:, :, np.newaxis], Xt], axis=-1)        # (B, L, 1+4)
+        else:
+            X = Xp[:, :, np.newaxis]                       # (B, L, 1)
 
         Y_norm = np.stack([
             self.arr_norm[s, t + self.lookback: t + self.lookback + self.horizon]
@@ -125,13 +145,17 @@ def train(
     steps_per_epoch: int = 1000,
     seed: int = 0,
     loss_fn=masked_gaussian_nll,
+    train_target: str = "norm",
 ):
     rng_np  = np.random.default_rng(seed)
     rng_jax = jax.random.PRNGKey(seed)
 
-    # Initialise with a dummy batch
-    dummy_x = jnp.zeros((1, model.max_len, model.out_features))
+    # Initialise with a dummy batch (input channel count = in_features)
+    in_feat = getattr(model, "in_features", model.out_features)
+    dummy_x = jnp.zeros((1, model.max_len, in_feat))
     params  = model.init(rng_jax, dummy_x, train=False)
+
+    use_raw = train_target == "raw"   # supervise in raw MW (RevIN model) vs z-scored
 
     schedule  = optax.cosine_decay_schedule(lr, decay_steps=epochs * steps_per_epoch)
     optimizer = optax.adam(schedule)
@@ -146,19 +170,21 @@ def train(
         # --- train ---
         train_losses = []
         for _ in range(steps_per_epoch):
-            x_b, y_b, _, mask_b, _ = train_ds.sample_batch(batch_size, rng_np)
+            x_b, y_b, y_raw_b, mask_b, _ = train_ds.sample_batch(batch_size, rng_np)
+            target = y_raw_b if use_raw else y_b
             rng_jax, step_rng = jax.random.split(rng_jax)
             params, opt_state, loss = train_step(
                 params, opt_state,
-                jnp.array(x_b), jnp.array(y_b), jnp.array(mask_b), step_rng,
+                jnp.array(x_b), jnp.array(target), jnp.array(mask_b), step_rng,
             )
             train_losses.append(float(loss))
 
         # --- validate (one pass over val dataset) ---
         val_losses = []
-        for x_b, y_b, _, mask_b, _ in val_ds.sequential_batches(batch_size * 4):
+        for x_b, y_b, y_raw_b, mask_b, _ in val_ds.sequential_batches(batch_size * 4):
+            target = y_raw_b if use_raw else y_b
             mean, log_std = eval_step(params, jnp.array(x_b))
-            val_loss = masked_gaussian_nll(mean, log_std, jnp.array(y_b), jnp.array(mask_b))
+            val_loss = masked_gaussian_nll(mean, log_std, jnp.array(target), jnp.array(mask_b))
             val_losses.append(float(val_loss))
 
         t_loss = float(np.mean(train_losses))

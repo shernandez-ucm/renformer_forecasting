@@ -1,0 +1,16 @@
+Loading SEN CSV …
+Building site matrix …
+  Sites : 291
+  Hours : 47,400  (5.4 yr)
+  Obs > 0 : 6,487,696
+  Intermittent fraction (≤ 0.1 MW): 57.9%
+  Train 2021-01-01 → 2023-12-31  (26,280 h)
+  Val   2024-01-01 → 2024-12-31  (8,784 h)
+  Test  2025-01-01 → 2026-05-29  (12,336 h)
+
+Dataset sizes  train=7,591,899  val=2,500,563  test=3,534,195
+
+--- Persistence ---
+   {'MAE': 9.440556526184082, 'RMSE': 22.350818634033203}
+
+--- REnFormer-MSE (ablation) ---

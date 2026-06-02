@@ -15,6 +15,25 @@ VAL_END   = "2025-01-01"
 MAX_MISSING_FRAC = 0.10   # drop sites with > 10 % missing hours
 
 
+def calendar_features(index: pd.DatetimeIndex) -> np.ndarray:
+    """
+    Cyclical hour-of-day and day-of-year features, shape (T, 4):
+        [sin(hour), cos(hour), sin(doy), cos(doy)]
+
+    Solar generation is driven by the diurnal and annual cycles; feeding these
+    as exogenous channels lets the model anchor its forecast to clock time
+    rather than only to position within the context window.
+    """
+    hour = index.hour.to_numpy()
+    doy  = index.dayofyear.to_numpy()
+    return np.stack([
+        np.sin(2 * np.pi * hour / 24.0),
+        np.cos(2 * np.pi * hour / 24.0),
+        np.sin(2 * np.pi * doy / 365.25),
+        np.cos(2 * np.pi * doy / 365.25),
+    ], axis=-1).astype(np.float32)
+
+
 def load_sen_csv(path: str) -> pd.DataFrame:
     """
     Load the wide-format CEN CSV and return a long-format DataFrame with
