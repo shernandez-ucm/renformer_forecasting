@@ -12,7 +12,6 @@ Optional flags:
 """
 import argparse
 import numpy as np
-import jax
 import jax.numpy as jnp
 
 from renformer.model import TimeSeriesTransformer
@@ -53,24 +52,23 @@ def collect_predictions(params, model, dataset: SENDataset, batch_size=512):
     )
 
 
-def last_window_metrics(params, model, test_ds: SENDataset, grand_mean, grand_std):
+def last_window_metrics(params, model, test_ds: SENDataset):
     """
     Evaluate the model on the final LOOKBACK window of the test set.
     Uses the last valid start position across all sites.
+    RevIN denormalises outputs to raw MW, so no external denorm stats needed.
     """
     eval_step = make_eval_step(model)
-    last_t = test_ds.n_windows - 1
-    all_s   = np.arange(test_ds.S)
+    last_t     = test_ds.n_windows - 1
+    all_s      = np.arange(test_ds.S)
     last_t_arr = np.full(test_ds.S, last_t, dtype=np.int64)
 
     X, _, Y_raw, _, _ = test_ds._fetch(all_s, last_t_arr)
     mean, log_std = eval_step(params, jnp.array(X))
     sigma = np.array(jnp.exp(log_std))
 
-    return evaluate(
-        Y_raw, np.array(mean), sigma,
-        denorm_mean=grand_mean, denorm_std=grand_std,
-    )
+    # Model outputs are in raw MW — evaluate directly with no linear rescaling.
+    return evaluate(Y_raw, np.array(mean), sigma)
 
 
 def run(args):
@@ -80,22 +78,23 @@ def run(args):
     (train_raw, train_norm), \
     (val_raw,   val_norm), \
     (test_raw,  test_norm), \
-    norm_stats = prepare_sen_dataset(args.csv)
+    _ = prepare_sen_dataset(args.csv)
 
-    train_ds = SENDataset(train_norm, train_raw, LOOKBACK, HORIZON)
-    val_ds   = SENDataset(val_norm,   val_raw,   LOOKBACK, HORIZON)
-    test_ds  = SENDataset(test_norm,  test_raw,  LOOKBACK, HORIZON)
+    # raw_input=True: feed raw MW to the model so RevIN performs a clean
+    # per-window normalisation from scratch (no prior global z-score).
+    train_ds = SENDataset(train_norm, train_raw, LOOKBACK, HORIZON, raw_input=True)
+    val_ds   = SENDataset(val_norm,   val_raw,   LOOKBACK, HORIZON, raw_input=True)
+    test_ds  = SENDataset(test_norm,  test_raw,  LOOKBACK, HORIZON, raw_input=True)
 
     print(f"\nDataset sizes  train={len(train_ds):,}  val={len(val_ds):,}  test={len(test_ds):,}")
-
-    grand_mean = float(norm_stats["mean"].values.mean())
-    grand_std  = float(norm_stats["std"].values.mean())
 
     # ------------------------------------------------------------------
     # 2. Train REnFormer (metrics reported every epoch)
     # ------------------------------------------------------------------
     print("\n--- REnFormer (masked Gaussian NLL) ---")
     model = TimeSeriesTransformer(**HPARAMS)
+    # train_target="raw": supervise in raw MW so the loss is in the same
+    # space as RevIN's denormalised outputs.
     params, history = train(
         model, train_ds, val_ds,
         epochs=args.epochs,
@@ -103,21 +102,23 @@ def run(args):
         steps_per_epoch=args.steps_ep,
         lr=3e-4,
         loss_fn=masked_gaussian_nll,
+        train_target="raw",
     )
 
     # ------------------------------------------------------------------
     # 3. Full test-set evaluation
     # ------------------------------------------------------------------
+    # RevIN denormalises outputs to raw MW — evaluate directly.
     print("\n--- Test-set evaluation ---")
     y_true, mu, sigma = collect_predictions(params, model, test_ds)
-    test_metrics = evaluate(y_true, mu, sigma, denorm_mean=grand_mean, denorm_std=grand_std)
+    test_metrics = evaluate(y_true, mu, sigma)
     print_results_table({"REnFormer (test)": test_metrics})
 
     # ------------------------------------------------------------------
     # 4. Last-window performance (final LOOKBACK hours → HORIZON forecast)
     # ------------------------------------------------------------------
     print(f"\n--- Last {LOOKBACK}-hour window → {HORIZON}-hour forecast ---")
-    last_metrics = last_window_metrics(params, model, test_ds, grand_mean, grand_std)
+    last_metrics = last_window_metrics(params, model, test_ds)
     print_results_table({"REnFormer (last window)": last_metrics})
 
     return params, history
