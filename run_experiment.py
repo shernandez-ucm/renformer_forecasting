@@ -16,6 +16,7 @@ import os
 import pickle
 import numpy as np
 import jax.numpy as jnp
+import jax
 
 from renformer.model import TimeSeriesTransformer
 from renformer.train import SENDataset, train, make_eval_step, masked_gaussian_nll
@@ -105,67 +106,7 @@ def run(args):
     print(f"\nDataset sizes  train={len(train_ds):,}  val={len(val_ds):,}  test={len(test_ds):,}")
 
     # ------------------------------------------------------------------
-<<<<<<< Updated upstream
     # 2. Train REnFormer (metrics reported every epoch)
-=======
-    # 2. Persistence baseline
-    # ------------------------------------------------------------------
-    print("\n--- Persistence ---")
-    y_true_all, mu_all, sigma_all = [], [], []
-    for x_b, _, y_raw_b, _, _ in test_ds.sequential_batches(512):
-        pred = persistence_forecast(x_b, HORIZON)
-        y_true_all.append(y_raw_b)
-        mu_all.append(pred)
-    y_true_all  = np.concatenate(y_true_all)
-    mu_all      = np.concatenate(mu_all)
-    # Persistence predicts in normalised space; denorm for MW metrics
-    site_std_arr = norm_stats["std"].values                   # (n_sites,)
-    site_mean_arr = norm_stats["mean"].values
-
-    # For global metrics we use the grand mean / std of all sites' normalisation params
-    # (exact per-window denorm requires tracking site index — see comments below)
-    grand_mean = float(site_mean_arr.mean())
-    grand_std  = float(site_std_arr.mean())
-    results["Persistence"] = evaluate(y_true_all, mu_all, denorm_mean=grand_mean, denorm_std=grand_std)
-    print("  ", results["Persistence"])
-
-    # ------------------------------------------------------------------
-    # 3. Per-site baselines  (optional, slow)
-    # ------------------------------------------------------------------
-    if not args.skip_baselines:
-        n = args.max_sites
-        print(f"\n--- Per-site MLP (max_sites={n or 'all'}) ---")
-        y_true_mlp, y_pred_mlp = run_per_site_mlp(train_ds, val_ds, test_ds, HORIZON, max_sites=n)
-        results["Per-site MLP"] = evaluate(y_true_mlp, y_pred_mlp, denorm_mean=grand_mean, denorm_std=grand_std)
-        print("  ", results["Per-site MLP"])
-
-        print(f"\n--- Per-site LSTM (max_sites={n or 'all'}) ---")
-        y_true_lstm, y_pred_lstm = run_per_site_lstm(train_ds, test_ds, HORIZON, max_sites=n)
-        results["Per-site LSTM"] = evaluate(y_true_lstm, y_pred_lstm, denorm_mean=grand_mean, denorm_std=grand_std)
-        print("  ", results["Per-site LSTM"])
-
-    # ------------------------------------------------------------------
-    # 4. REnFormer-MSE ablation  (optional)
-    # ------------------------------------------------------------------
-    if args.ablation:
-        print("\n--- REnFormer-MSE (ablation) ---")
-        model_mse = TimeSeriesTransformer(**HPARAMS)
-        params_mse, history_mse = train(
-            model_mse, train_ds, val_ds,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            steps_per_epoch=args.steps_ep,
-            lr=3e-4,
-            loss_fn=mse_loss,
-        )
-        _save_checkpoint(args.checkpoint_dir, "renformer_mse", params_mse, history_mse)
-        y_true_mse, mu_mse, _ = collect_predictions(params_mse, model_mse, test_ds)
-        results["REnFormer-MSE"] = evaluate(y_true_mse, mu_mse, denorm_mean=grand_mean, denorm_std=grand_std)
-        print("  ", results["REnFormer-MSE"])
-
-    # ------------------------------------------------------------------
-    # 5. REnFormer (full model)
->>>>>>> Stashed changes
     # ------------------------------------------------------------------
     print("\n--- REnFormer (masked Gaussian NLL) ---")
     model = TimeSeriesTransformer(**HPARAMS)
@@ -180,16 +121,6 @@ def run(args):
         loss_fn=masked_gaussian_nll,
         train_target="raw",
     )
-<<<<<<< Updated upstream
-=======
-    _save_checkpoint(args.checkpoint_dir, "renformer", params, history)
-    y_true_rf, mu_rf, sigma_rf = collect_predictions(params, model, test_ds)
-    results["REnFormer"] = evaluate(
-        y_true_rf, mu_rf, sigma_rf,
-        denorm_mean=grand_mean, denorm_std=grand_std,
-    )
-    print("  ", results["REnFormer"])
->>>>>>> Stashed changes
 
     # ------------------------------------------------------------------
     # 3. Full test-set evaluation
