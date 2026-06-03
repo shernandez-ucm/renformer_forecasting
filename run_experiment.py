@@ -212,13 +212,6 @@ def run(args):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-<<<<<<< Updated upstream
-    p.add_argument("--csv",        required=True, help="Path to SEN Chile CSV")
-    p.add_argument("--epochs",     type=int, default=50)
-    p.add_argument("--batch_size", type=int, default=64)
-    p.add_argument("--steps_ep",   type=int, default=1000,
-                   help="Gradient steps per epoch")
-=======
     p.add_argument("--csv",            required=True, help="Path to SEN Chile CSV")
     p.add_argument("--epochs",         type=int,   default=50)
     p.add_argument("--batch_size",     type=int,   default=64)
@@ -232,6 +225,5 @@ if __name__ == "__main__":
                    help="Also train REnFormer-MSE ablation")
     p.add_argument("--checkpoint_dir",  default="checkpoints",
                    help="Directory to write params (.pkl) and history (.json) (default: checkpoints)")
->>>>>>> Stashed changes
     args = p.parse_args()
     run(args)
