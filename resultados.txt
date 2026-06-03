@@ -13,4 +13,22 @@ Dataset sizes  train=7,591,899  val=2,500,563  test=3,534,195
 --- Persistence ---
    {'MAE': 9.440556526184082, 'RMSE': 22.350818634033203}
 
---- REnFormer-MSE (ablation) ---
+--- REnFormer (masked Gaussian NLL) ---
+Epoch 001/50 | train NLL 694468.3610 | val NLL 155624.2099
+Epoch 005/50 | train NLL 6352.6001 | val NLL 15761.2095
+Epoch 010/50 | train NLL 393.5536 | val NLL 1462.4165
+Epoch 015/50 | train NLL 46.8899 | val NLL 129.3402
+Epoch 020/50 | train NLL 14.6637 | val NLL 20.9960
+Epoch 025/50 | train NLL 10.0495 | val NLL 12.3662
+Epoch 030/50 | train NLL 9.1346 | val NLL 10.3467
+Epoch 035/50 | train NLL 9.6690 | val NLL 9.9718
+Epoch 040/50 | train NLL 8.2953 | val NLL 8.7456
+Epoch 045/50 | train NLL 9.7648 | val NLL 6.8703
+Epoch 050/50 | train NLL 2.4068 | val NLL 9.1563
+   {'MAE': 11.912848472595215, 'RMSE': 21.808847427368164, 'CRPS': 10.271607899517626}
+
+=== Test Results (non-trivial timesteps, MW scale) ===
+Method                         MAE     RMSE     CRPS
+----------------------------------------------------
+Persistence                 9.4406  22.3508     ——  
+REnFormer                  11.9128  21.8088  10.2716
