@@ -1,7 +1,11 @@
+import json
+from pathlib import Path
+
 import jax
 import jax.numpy as jnp
 import optax
 import numpy as np
+import pandas as pd
 
 from renformer.sen_data import calendar_features
 
@@ -22,7 +26,7 @@ def masked_gaussian_nll(mean, log_std, target, mask):
     return (nll * mask).sum() / (mask.sum() + 1e-6)
 
 
-def mse_loss(mean, log_std, target, mask=None):
+def mse_loss(mean, _log_std, target, _mask=None):
     """Unmasked MSE — used for the REnFormer-MSE ablation."""
     return jnp.mean((target - mean) ** 2)
 
@@ -71,6 +75,8 @@ class SENDataset:
         self.S, self.T = self.arr_norm.shape
         # number of valid start positions (one window = lookback + horizon)
         self.n_windows = self.T - lookback - horizon + 1
+        self.index     = df_norm.index   # DatetimeIndex preserved for serialization
+        self.raw_input = raw_input
 
         # Power channel fed to the model: raw (let the model's RevIN normalize)
         # or the pre-computed global z-score (legacy behaviour).
@@ -83,6 +89,45 @@ class SENDataset:
             self.tf = calendar_features(times)
         else:
             self.tf = None
+
+    # -----------------------------------------------------------------------
+    # Parquet persistence
+    # -----------------------------------------------------------------------
+
+    def save(self, path) -> None:
+        """Serialize this split to a directory (norm.parquet, raw.parquet, meta.json)."""
+        path = Path(path)
+        path.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(self.arr_norm.T, index=self.index, columns=self.site_names).to_parquet(
+            path / "norm.parquet"
+        )
+        pd.DataFrame(self.arr_raw.T, index=self.index, columns=self.site_names).to_parquet(
+            path / "raw.parquet"
+        )
+        (path / "meta.json").write_text(json.dumps({
+            "lookback":          self.lookback,
+            "horizon":           self.horizon,
+            "add_time_features": self.tf is not None,
+            "raw_input":         self.raw_input,
+        }))
+
+    @classmethod
+    def from_parquet(cls, path, **kwargs):
+        """Reconstruct a SENDataset from a directory written by .save()."""
+        path    = Path(path)
+        df_norm = pd.read_parquet(path / "norm.parquet")
+        df_raw  = pd.read_parquet(path / "raw.parquet")
+        meta    = json.loads((path / "meta.json").read_text())
+        meta.update(kwargs)   # caller may override any field
+        times   = df_norm.index if isinstance(df_norm.index, pd.DatetimeIndex) else None
+        return cls(
+            df_norm, df_raw,
+            lookback=meta["lookback"],
+            horizon=meta["horizon"],
+            times=times,
+            add_time_features=meta["add_time_features"],
+            raw_input=meta["raw_input"],
+        )
 
     def __len__(self):
         return self.S * self.n_windows
@@ -195,3 +240,66 @@ def train(
         print(f"Epoch {epoch:03d}/{epochs} | train NLL {t_loss:.4f} | val NLL {v_loss:.4f}")
 
     return params, history
+
+
+# ---------------------------------------------------------------------------
+# Orbax checkpoint helpers
+# ---------------------------------------------------------------------------
+
+def save_checkpoint(params, directory, step: int = 0) -> None:
+    """
+    Save Flax params to an Orbax CheckpointManager directory.
+
+    max_to_keep=1 keeps only the latest checkpoint, overwriting the previous
+    one on each call. Increment step to retain multiple checkpoints.
+    """
+    import orbax.checkpoint as ocp
+    directory = Path(directory).resolve()
+    directory.mkdir(parents=True, exist_ok=True)
+    mngr = ocp.CheckpointManager(
+        str(directory),
+        item_names=("params",),
+        options=ocp.CheckpointManagerOptions(max_to_keep=1),
+    )
+    mngr.save(step, args=ocp.args.Composite(params=ocp.args.PyTreeSave(params)))
+    mngr.wait_until_finished()
+    mngr.close()
+
+
+def load_checkpoint(params_like, directory):
+    """
+    Restore Flax params from the latest checkpoint in directory.
+
+    params_like must be a pytree with the same structure and dtypes as the
+    saved params — typically produced by model.init with a dummy batch.
+    """
+    import orbax.checkpoint as ocp
+    mngr = ocp.CheckpointManager(
+        str(Path(directory).resolve()),
+        item_names=("params",),
+        options=ocp.CheckpointManagerOptions(max_to_keep=1),
+    )
+    step = mngr.latest_step()
+    if step is None:
+        raise FileNotFoundError(f"No checkpoint found in {directory}")
+    restored = mngr.restore(
+        step,
+        args=ocp.args.Composite(params=ocp.args.PyTreeRestore(params_like)),
+    )
+    mngr.close()
+    return restored["params"]
+
+
+def checkpoint_exists(directory) -> bool:
+    """Return True if a valid Orbax checkpoint is present in directory."""
+    import orbax.checkpoint as ocp
+    try:
+        mngr = ocp.CheckpointManager(
+            str(Path(directory).resolve()),
+            item_names=("params",),
+        )
+        exists = mngr.latest_step() is not None
+        mngr.close()
+        return exists
+    except Exception:
+        return False

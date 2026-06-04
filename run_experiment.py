@@ -16,8 +16,14 @@ import jax
 import jax.numpy as jnp
 
 from renformer.model import TimeSeriesTransformer
-from renformer.train import SENDataset, train, make_eval_step, masked_gaussian_nll
-from renformer.sen_data import prepare_sen_dataset
+from renformer.train import (
+    SENDataset, train, make_eval_step, masked_gaussian_nll,
+    save_checkpoint, load_checkpoint, checkpoint_exists,
+)
+from renformer.sen_data import (
+    prepare_sen_dataset,
+    save_prepared_dataset, load_prepared_dataset, prepared_dataset_exists,
+)
 from renformer.metrics import evaluate, print_results_table
 
 LOOKBACK = 168   # 7-day context window
@@ -75,12 +81,20 @@ def last_window_metrics(params, model, test_ds: SENDataset, grand_mean, grand_st
 
 def run(args):
     # ------------------------------------------------------------------
-    # 1. Data
+    # 1. Data  (load from parquet cache when available)
     # ------------------------------------------------------------------
+    if args.cache_dir and prepared_dataset_exists(args.cache_dir):
+        print(f"Loading preprocessed dataset from cache: {args.cache_dir}")
+        result = load_prepared_dataset(args.cache_dir)
+    else:
+        result = prepare_sen_dataset(args.csv)
+        if args.cache_dir:
+            save_prepared_dataset(result, args.cache_dir)
+
     (train_raw, train_norm), \
     (val_raw,   val_norm), \
     (test_raw,  test_norm), \
-    norm_stats = prepare_sen_dataset(args.csv)
+    norm_stats = result
 
     train_ds = SENDataset(train_norm, train_raw, LOOKBACK, HORIZON)
     val_ds   = SENDataset(val_norm,   val_raw,   LOOKBACK, HORIZON)
@@ -92,18 +106,32 @@ def run(args):
     grand_std  = float(norm_stats["std"].values.mean())
 
     # ------------------------------------------------------------------
-    # 2. Train REnFormer (metrics reported every epoch)
+    # 2. Train REnFormer  (or restore from checkpoint with --resume)
     # ------------------------------------------------------------------
-    print("\n--- REnFormer (masked Gaussian NLL) ---")
     model = TimeSeriesTransformer(**HPARAMS)
-    params, history = train(
-        model, train_ds, val_ds,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        steps_per_epoch=args.steps_ep,
-        lr=3e-4,
-        loss_fn=masked_gaussian_nll,
-    )
+
+    if args.resume and checkpoint_exists(args.checkpoint_dir):
+        print(f"\n--- Restoring params from {args.checkpoint_dir} (skipping training) ---")
+        in_feat     = getattr(model, "in_features", model.out_features)
+        dummy_x     = jnp.zeros((1, LOOKBACK, in_feat))
+        params_like = model.init(jax.random.PRNGKey(0), dummy_x, train=False)
+        params      = load_checkpoint(params_like, args.checkpoint_dir)
+        history     = {}
+    else:
+        print("\n--- REnFormer (masked Gaussian NLL) ---")
+        # train_target="raw": supervise in raw MW so the loss is in the same
+        # space as RevIN's denormalised outputs.
+        params, history = train(
+            model, train_ds, val_ds,
+            epochs=args.epochs,
+            batch_size=args.batch_size,
+            steps_per_epoch=args.steps_ep,
+            lr=3e-4,
+            loss_fn=masked_gaussian_nll,
+            train_target="raw",
+        )
+        save_checkpoint(params, args.checkpoint_dir)
+        print(f"Checkpoint saved → {args.checkpoint_dir}/")
 
     # ------------------------------------------------------------------
     # 3. Full test-set evaluation
@@ -125,10 +153,22 @@ def run(args):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("--csv",        required=True, help="Path to SEN Chile CSV")
-    p.add_argument("--epochs",     type=int, default=50)
-    p.add_argument("--batch_size", type=int, default=64)
-    p.add_argument("--steps_ep",   type=int, default=1000,
-                   help="Gradient steps per epoch")
+    p.add_argument("--csv",            required=True, help="Path to SEN Chile CSV")
+    p.add_argument("--epochs",         type=int,   default=50)
+    p.add_argument("--batch_size",     type=int,   default=64)
+    p.add_argument("--steps_ep",       type=int,   default=1000,
+                   help="Gradient steps per epoch (controls compute budget)")
+    p.add_argument("--max_sites",      type=int,   default=None,
+                   help="Cap per-site baselines to N sites")
+    p.add_argument("--skip_baselines",  action="store_true",
+                   help="Skip per-site MLP/LSTM (faster smoke test)")
+    p.add_argument("--ablation",        action="store_true",
+                   help="Also train REnFormer-MSE ablation")
+    p.add_argument("--cache_dir",       default=None,
+                   help="Directory to cache/restore preprocessed parquet splits")
+    p.add_argument("--checkpoint_dir",  default="checkpoints",
+                   help="Directory for Orbax params checkpoint (default: checkpoints)")
+    p.add_argument("--resume",          action="store_true",
+                   help="Load params from --checkpoint_dir and skip training")
     args = p.parse_args()
     run(args)

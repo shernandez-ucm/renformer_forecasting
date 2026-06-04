@@ -4,6 +4,8 @@ SEN Chile data loading and preprocessing pipeline.
 Source: CEN "Descarga Generación Real" CSV
 Format: semicolon-delimited, comma-decimal, wide (24 hour columns per row/day).
 """
+from pathlib import Path
+
 import pandas as pd
 import numpy as np
 
@@ -129,6 +131,64 @@ def normalize_per_site(train, val, test):
     val_norm   = (val   - site_mean) / site_std
     test_norm  = (test  - site_mean) / site_std
     return train_norm, val_norm, test_norm, site_mean, site_std
+
+
+# ---------------------------------------------------------------------------
+# Parquet persistence for the preprocessed dataset
+# ---------------------------------------------------------------------------
+
+_SPLIT_NAMES = ("train_raw", "train_norm", "val_raw", "val_norm", "test_raw", "test_norm")
+
+
+def save_prepared_dataset(result, cache_dir) -> None:
+    """
+    Persist the 4-tuple returned by prepare_sen_dataset to parquet files.
+    Creates cache_dir if it does not exist.
+    """
+    (train_raw, train_norm), (val_raw, val_norm), (test_raw, test_norm), norm_stats = result
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    for name, df in zip(
+        _SPLIT_NAMES,
+        (train_raw, train_norm, val_raw, val_norm, test_raw, test_norm),
+    ):
+        df.to_parquet(cache_dir / f"{name}.parquet")
+
+    pd.DataFrame({"mean": norm_stats["mean"], "std": norm_stats["std"]}).to_parquet(
+        cache_dir / "norm_stats.parquet"
+    )
+    print(f"Dataset cached → {cache_dir}/")
+
+
+def load_prepared_dataset(cache_dir):
+    """
+    Load a dataset previously saved by save_prepared_dataset.
+    Returns the same 4-tuple as prepare_sen_dataset.
+    """
+    cache_dir = Path(cache_dir)
+    dfs = {name: pd.read_parquet(cache_dir / f"{name}.parquet") for name in _SPLIT_NAMES}
+    stats_df = pd.read_parquet(cache_dir / "norm_stats.parquet")
+    norm_stats = {
+        "mean":  stats_df["mean"],
+        "std":   stats_df["std"],
+        "sites": stats_df.index.tolist(),
+    }
+    return (
+        (dfs["train_raw"], dfs["train_norm"]),
+        (dfs["val_raw"],   dfs["val_norm"]),
+        (dfs["test_raw"],  dfs["test_norm"]),
+        norm_stats,
+    )
+
+
+def prepared_dataset_exists(cache_dir) -> bool:
+    """Return True if all expected parquet files are present in cache_dir."""
+    cache_dir = Path(cache_dir)
+    return all(
+        (cache_dir / f"{name}.parquet").exists()
+        for name in (*_SPLIT_NAMES, "norm_stats")
+    )
 
 
 def prepare_sen_dataset(csv_path: str):
