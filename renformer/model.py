@@ -66,6 +66,37 @@ class TransformerEncoder(nn.Module):
         return x
 
 
+class SkipTransformerEncoder(nn.Module):
+    """TransformerEncoder with a macro skip-connection from input to output.
+
+    After the linear projection and positional encoding, the representation
+    x_0 is saved.  The N transformer blocks are applied as usual, then x_0 is
+    added back before a final LayerNorm.  This gives gradients a direct path
+    to the projection layer, helping very deep stacks and reducing the risk
+    of the attention layers being ignored early in training.
+    """
+    d_model: int
+    num_heads: int
+    num_layers: int
+    mlp_dim: int
+    dropout_rate: float
+    max_len: int
+
+    @nn.compact
+    def __call__(self, x, train: bool):
+        x = nn.Dense(self.d_model)(x)
+        x = PositionalEncoding(self.max_len, self.d_model)(x)
+        skip = x
+        for _ in range(self.num_layers):
+            x = TransformerBlock(
+                self.d_model,
+                self.num_heads,
+                self.mlp_dim,
+                self.dropout_rate,
+            )(x, train)
+        return nn.LayerNorm()(x + skip)
+
+
 class TimeSeriesTransformer(nn.Module):
     """
     REnFormer: global Transformer for probabilistic multi-site forecasting.
@@ -120,4 +151,52 @@ class TimeSeriesTransformer(nn.Module):
         if self.instance_norm:
             mean = mean * sd + mu              # back to raw units
             log_std = log_std + jnp.log(sd)    # std scales with the window std
+        return mean, log_std
+
+
+class TimeSeriesTransformerSkip(nn.Module):
+    """REnFormer with a macro skip-connection across the entire encoder stack.
+
+    Identical to TimeSeriesTransformer except the encoder uses
+    SkipTransformerEncoder: the projected+PE representation is added back
+    to the encoder output before the forecasting heads.  All other
+    hyperparameters and the RevIN logic are unchanged, making this a
+    drop-in replacement for ablation studies.
+    """
+    d_model: int
+    num_heads: int
+    num_layers: int
+    mlp_dim: int
+    dropout_rate: float
+    max_len: int
+    horizon: int
+    out_features: int = 1
+    in_features: int = 1
+    instance_norm: bool = True
+
+    @nn.compact
+    def __call__(self, x, train: bool = True):
+        if self.instance_norm:
+            power = x[..., :1]
+            mu = jnp.mean(power, axis=1, keepdims=True)
+            sd = jnp.std(power, axis=1, keepdims=True) + 1e-5
+            x = jnp.concatenate([(power - mu) / sd, x[..., 1:]], axis=-1)
+
+        enc = SkipTransformerEncoder(
+            self.d_model,
+            self.num_heads,
+            self.num_layers,
+            self.mlp_dim,
+            self.dropout_rate,
+            self.max_len,
+        )(x, train)
+
+        summary = enc[:, -1, :]
+        out_dim = self.horizon * self.out_features
+        mean    = nn.Dense(out_dim)(summary).reshape(-1, self.horizon, self.out_features)
+        log_std = nn.Dense(out_dim)(summary).reshape(-1, self.horizon, self.out_features)
+
+        if self.instance_norm:
+            mean    = mean * sd + mu
+            log_std = log_std + jnp.log(sd)
         return mean, log_std

@@ -50,6 +50,11 @@ python forecast_solar.py     # solar-only 24 h forecast (Flax backend, quantile 
 python finetune_solar.py     # fine-tune on Chilean solar; compares vs zero-shot baseline
 ```
 
+**Quick sanity check** (no SEN CSV needed — uses random data):
+```bash
+python synthetic_data.py
+```
+
 **EDA**:
 ```bash
 python eda_generacion.py
@@ -67,11 +72,14 @@ renformer/
   metrics.py    — MAE, RMSE, CRPS (active-mask aware)
   baselines.py  — Persistence, per-site MLP, per-site LSTM (all in JAX/Flax)
   data_utils.py — Monash .tsf parser (legacy; not used by run_experiment.py)
-run_experiment.py  — end-to-end paper reproduction script
-compare_models.py  — NeuralForecast benchmark (TSMixer, DeepAR, TFT, Autoformer)
+run_experiment.py   — end-to-end paper reproduction script
+compare_models.py   — NeuralForecast benchmark (TSMixer, DeepAR, TFT, Autoformer)
 forecast_example.py — TimesFM 2.5 zero-shot all-generation forecast
 forecast_solar.py   — TimesFM 2.5 zero-shot solar-only forecast
 finetune_solar.py   — TimesFM 2.5 fine-tuning (PyTorch) on solar data
+synthetic_data.py   — generates random (X, Y) tensors and runs a short training loop; validates the stack without real data
+baseline_models.py  — pandas/numpy statistical baselines (arithmetic mean, rolling mean, seasonal naive); single-site, operates on DataFrames; separate from renformer/baselines.py which implements JAX/Flax Persistence/MLP/LSTM for multi-site SEN evaluation
+paper/              — LaTeX source (renformer_paper.tex) and bibliography (renformer.bib)
 ```
 
 ### Model (`model.py`)
@@ -90,7 +98,7 @@ Source: CEN "Descarga Generación Real" semicolon-delimited CSV with 24 hour-col
 
 Pipeline: `load_sen_csv` → `build_site_matrix` (pivot to `(time × site)`, filter Solar type, drop sites with > 10% missing, clip negatives) → `chronological_split` (train < 2024-01-01, val < 2025-01-01, test ≥ 2025-01-01) → `normalize_per_site` (z-score with training stats).
 
-`prepare_sen_dataset` wraps the full pipeline. Results can be persisted with `save_prepared_dataset` / `load_prepared_dataset` (parquet files) to avoid re-parsing.
+`prepare_sen_dataset` wraps the full pipeline. Results can be persisted with `save_prepared_dataset` / `load_prepared_dataset` (parquet files) to avoid re-parsing. A pre-built cache already exists in `data/` (`train_raw.parquet`, `val_raw.parquet`, `test_raw.parquet`, `train_norm.parquet`, `val_norm.parquet`, `test_norm.parquet`, `norm_stats.parquet`), so `--cache_dir data/` works immediately without re-parsing the CSV.
 
 ### Dataset & training (`train.py`)
 

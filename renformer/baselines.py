@@ -61,7 +61,7 @@ def _fit_site_model(model, X_site, Y_site, epochs=EPOCHS, lr=LR, seed=0):
     @jax.jit
     def step(params, opt_state, x, y):
         def loss_fn(p):
-            return jnp.mean((model.apply(p, x) - y) ** 2)
+            return jnp.mean((model.apply(p, x)[..., 0] - y) ** 2)
         loss, grads = jax.value_and_grad(loss_fn)(params)
         updates, new_state = opt.update(grads, opt_state)
         return optax.apply_updates(params, updates), new_state
