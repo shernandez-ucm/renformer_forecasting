@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **REnFormer** is a global Transformer for probabilistic multi-site solar generation forecasting, trained on Chile's SEN grid data. It outputs Gaussian `(mean, log_std)` predictions evaluated with masked NLL (penalising only non-trivial generation timesteps, raw MW > 0.1).
 
+The repo also includes **TimesFM 2.5** zero-shot and fine-tuning scripts for comparison.
+
 ## Environment
 
 Python 3.12 with a local virtualenv at `env/`. Activate before running anything:
@@ -14,20 +16,38 @@ Python 3.12 with a local virtualenv at `env/`. Activate before running anything:
 source env/bin/activate
 ```
 
-Key dependencies: `jax==0.10.1`, `jaxlib==0.10.1` (CUDA 12), `flax==0.12.7`, `optax==0.2.8`, `numpy`, `pandas`, `scipy`.
+Key dependencies: `jax==0.10.1`, `jaxlib==0.10.1` (CUDA 12), `flax==0.12.7`, `optax==0.2.8`, `numpy`, `pandas`, `scipy`, `timesfm`, `neuralforecast`, `orbax-checkpoint`.
 
 ## Running the Code
 
-**Full experiment** (real SEN Chile data):
+**Full REnFormer experiment** (real SEN Chile data):
 ```bash
-python run_experiment.py --csv docs/Descarga_Generación_Real_2026-05-29_18-57-56.csv
-python run_experiment.py --csv <path> --skip_baselines   # faster, skips MLP/LSTM
-python run_experiment.py --csv <path> --ablation         # also trains MSE variant
+python run_experiment.py --csv data/Descarga_Generación_Real_2026-05-29_18-57-56.csv
+python run_experiment.py --csv <path> --skip_baselines          # faster, skips MLP/LSTM
+python run_experiment.py --csv <path> --ablation                # also trains MSE variant
+python run_experiment.py --csv <path> --cache_dir data/cache/   # cache preprocessed parquet
+python run_experiment.py --csv <path> --resume                  # skip training, load checkpoint
+```
+Checkpoints are saved to `checkpoints/` by default (override with `--checkpoint_dir`).
+
+**NeuralForecast comparison** (TSMixer, DeepAR, TFT, Autoformer vs REnFormer):
+```bash
+python compare_models.py --csv <path>
+python compare_models.py --csv <path> --models deepar tft       # subset of models
+python compare_models.py --csv <path> --zero_shot               # no SEN training
+python compare_models.py --csv <path> --max_sites 50            # limit sites for speed
+python compare_models.py --cache_dir data/cache/ --csv <path>   # reuse parquet cache
 ```
 
-**Synthetic smoke test** (no data needed, but note `synthetic_data.py` uses the old `train()` API and is currently broken — see `run_experiment.py` as the authoritative entry point):
+**TimesFM zero-shot forecasts** (no training needed):
 ```bash
-python synthetic_data.py
+python forecast_example.py   # all-generation 24 h forecast (total MW, Flax backend)
+python forecast_solar.py     # solar-only 24 h forecast (Flax backend, quantile output)
+```
+
+**TimesFM fine-tuning** (PyTorch backend; freezes backbone, trains heads + last N layers):
+```bash
+python finetune_solar.py     # fine-tune on Chilean solar; compares vs zero-shot baseline
 ```
 
 **EDA**:
@@ -42,12 +62,16 @@ python eda_generacion.py
 ```
 renformer/
   model.py      — TransformerBlock → TransformerEncoder → TimeSeriesTransformer
-  train.py      — loss functions, JIT step factories, SENDataset, training loop
-  sen_data.py   — SEN Chile CSV loader, site-matrix builder, chronological split, normalization
+  train.py      — loss functions, JIT step factories, SENDataset, Orbax checkpointing, training loop
+  sen_data.py   — SEN Chile CSV loader, site-matrix builder, chronological split, normalization, parquet cache
   metrics.py    — MAE, RMSE, CRPS (active-mask aware)
   baselines.py  — Persistence, per-site MLP, per-site LSTM (all in JAX/Flax)
   data_utils.py — Monash .tsf parser (legacy; not used by run_experiment.py)
-run_experiment.py — end-to-end paper reproduction script
+run_experiment.py  — end-to-end paper reproduction script
+compare_models.py  — NeuralForecast benchmark (TSMixer, DeepAR, TFT, Autoformer)
+forecast_example.py — TimesFM 2.5 zero-shot all-generation forecast
+forecast_solar.py   — TimesFM 2.5 zero-shot solar-only forecast
+finetune_solar.py   — TimesFM 2.5 fine-tuning (PyTorch) on solar data
 ```
 
 ### Model (`model.py`)
@@ -64,15 +88,23 @@ Paper hyperparameters: `d_model=128, num_heads=4, num_layers=4, mlp_dim=256, dro
 
 Source: CEN "Descarga Generación Real" semicolon-delimited CSV with 24 hour-columns per row.
 
-Pipeline: `load_sen_csv` → `build_site_matrix` (pivot to `(time × site)`, drop sites with > 10% missing, clip negatives) → `chronological_split` (train < 2024-01-01, val < 2025-01-01, test ≥ 2025-01-01) → `normalize_per_site` (z-score with training stats).
+Pipeline: `load_sen_csv` → `build_site_matrix` (pivot to `(time × site)`, filter Solar type, drop sites with > 10% missing, clip negatives) → `chronological_split` (train < 2024-01-01, val < 2025-01-01, test ≥ 2025-01-01) → `normalize_per_site` (z-score with training stats).
+
+`prepare_sen_dataset` wraps the full pipeline. Results can be persisted with `save_prepared_dataset` / `load_prepared_dataset` (parquet files) to avoid re-parsing.
 
 ### Dataset & training (`train.py`)
 
 `SENDataset` is a **lazy sliding-window** sampler over `(S, T)` arrays — avoids materialising ~14 GB of all windows. It supports random `sample_batch` (training) and ordered `sequential_batches` (evaluation). Optional calendar features (`sin/cos` hour + day-of-year) can be appended as extra input channels.
 
-`make_train_step` / `make_eval_step` return `@jax.jit`-compiled functions closed over the model and optimizer. The training loop uses cosine-decay Adam.
+`make_train_step` / `make_eval_step` return `@jax.jit`-compiled functions closed over the model and optimizer. The training loop uses cosine-decay Adam with `train_target="raw"` (supervise in MW, not z-score, when RevIN is active).
 
 Loss: `masked_gaussian_nll` — only penalises timesteps where raw generation > `EPSILON_MW = 0.1`.
+
+Checkpoints use Orbax (`save_checkpoint` / `load_checkpoint`) with `max_to_keep=1`.
+
+### TimesFM scripts
+
+`forecast_example.py` and `forecast_solar.py` use the **Flax** backend (`TimesFM_2p5_200M_flax`) for zero-shot inference. `finetune_solar.py` uses the **PyTorch** backend (`TimesFM_2p5_200M_torch`) because only the torch module exposes a differentiable forward pass; it freezes the backbone and trains output heads + the last `UNFREEZE_LAST_N` transformer layers.
 
 ### Evaluation
 

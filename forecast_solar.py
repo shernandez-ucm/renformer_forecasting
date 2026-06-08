@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 import timesfm
 
-DATA_PATH = "data/Descarga_Generación_Real_2026-05-29_18-57-56.csv"
+DATA_PATH = "data/data.csv"
 LOOKBACK = 168   # 7 days × 24 h
 HORIZON  = 24    # 1 day
 

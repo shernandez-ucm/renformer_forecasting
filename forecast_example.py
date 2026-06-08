@@ -14,8 +14,11 @@ import matplotlib.dates as mdates
 import numpy as np
 import pandas as pd
 import timesfm
+import matplotlib.pyplot as plt
+import scienceplots
 
-DATA_PATH = "data/Descarga_Generación_Real_2026-05-29_18-57-56.csv"
+plt.style.use('science')
+DATA_PATH = "data/data.csv"
 LOOKBACK = 168   # 7 days × 24 h
 HORIZON  = 24    # 1 day
 
