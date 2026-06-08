@@ -1,7 +1,32 @@
-import jax
 import jax.numpy as jnp
 from flax import linen as nn
-import numpy as np
+
+
+class RevIN(nn.Module):
+    """
+    Reversible Instance Normalization (Kim et al. 2022).
+
+    Normalises over the time axis (axis=1) per channel with learnable
+    affine parameters gamma (scale) and beta (shift), both initialised to
+    the identity (gamma=1, beta=0) so training starts from plain z-score.
+
+    Forward:  x_norm = gamma * (x - mean) / std + beta
+    Inverse:  x_raw  = (x_norm - beta) / gamma * std + mean
+
+    Returns (x_norm, mean, std, gamma, beta) so the parent module can
+    denormalise outputs without accessing submodule internals.
+    """
+    num_features: int
+    eps: float = 1e-5
+
+    @nn.compact
+    def __call__(self, x):
+        gamma = self.param('gamma', nn.initializers.ones,  (1, 1, self.num_features))
+        beta  = self.param('beta',  nn.initializers.zeros, (1, 1, self.num_features))
+        mean  = jnp.mean(x, axis=1, keepdims=True)          # (B, 1, F)
+        std   = jnp.std(x,  axis=1, keepdims=True) + self.eps
+        x_norm = (x - mean) / std * gamma + beta
+        return x_norm, mean, std, gamma, beta
 
 
 class PositionalEncoding(nn.Module):
@@ -10,11 +35,11 @@ class PositionalEncoding(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        pe = jnp.zeros((self.max_len, self.d_model))
         position = jnp.arange(self.max_len)[:, None]
         div_term = jnp.exp(
             jnp.arange(0, self.d_model, 2) * -(jnp.log(10000.0) / self.d_model)
         )
+        pe = jnp.zeros((self.max_len, self.d_model))
         pe = pe.at[:, 0::2].set(jnp.sin(position * div_term))
         pe = pe.at[:, 1::2].set(jnp.cos(position * div_term))
         return x + pe[None, : x.shape[1], :]
@@ -39,7 +64,7 @@ class TransformerBlock(nn.Module):
         y = nn.Dense(self.mlp_dim)(x)
         y = nn.gelu(y)
         y = nn.Dropout(self.dropout_rate)(y, deterministic=not train)
-        y = nn.Dense(self.d_model)(y)   # output dim must match d_model for residual
+        y = nn.Dense(self.d_model)(y)
         x = nn.LayerNorm()(x + y)
         return x
 
@@ -102,15 +127,13 @@ class TimeSeriesTransformer(nn.Module):
     REnFormer: global Transformer for probabilistic multi-site forecasting.
 
     Input  shape: (batch, seq_len, in_features)
-        channel 0          = the target power series
-        channels 1..in_features-1 = exogenous/calendar features (optional)
-    Output: (mean, log_std) each of shape (batch, horizon, out_features)
+        channels 0..out_features-1  = target power series
+        channels out_features..     = exogenous/calendar features (optional)
+    Output: (mean, log_std) each of shape (batch, horizon, out_features),
+            always in raw (denormalised) units when instance_norm=True.
 
-    With instance_norm=True the target channel is normalized per window
-    (reversible instance norm, à la TimesFM's RevIN): each window is centred
-    by its own mean/std before encoding and the Gaussian head outputs are
-    mapped back to raw units. This removes the need for a global z-score and
-    is robust to per-window level shifts.
+    RevIN is applied only to the power channels; exogenous features are
+    passed through unchanged so their bounded [-1,1] encoding is preserved.
     """
     d_model: int
     num_heads: int
@@ -125,13 +148,10 @@ class TimeSeriesTransformer(nn.Module):
 
     @nn.compact
     def __call__(self, x, train: bool = True):
-        # Per-window RevIN on the target channel (channel 0); leave exogenous
-        # calendar features untouched.
         if self.instance_norm:
-            power = x[..., :1]
-            mu = jnp.mean(power, axis=1, keepdims=True)            # (B, 1, 1)
-            sd = jnp.std(power, axis=1, keepdims=True) + 1e-5
-            x = jnp.concatenate([(power - mu) / sd, x[..., 1:]], axis=-1)
+            power = x[..., :self.out_features]                      # (B, T, out_features)
+            power_norm, mu, sd, gamma, beta = RevIN(self.out_features)(power)
+            x = jnp.concatenate([power_norm, x[..., self.out_features:]], axis=-1)
 
         enc = TransformerEncoder(
             self.d_model,
@@ -142,15 +162,18 @@ class TimeSeriesTransformer(nn.Module):
             self.max_len,
         )(x, train)
 
-        summary = enc[:, -1, :]   # last-token pooling (batch, d_model)
-
+        summary = enc[:, -1, :]                                     # last-token pooling
         out_dim = self.horizon * self.out_features
-        mean = nn.Dense(out_dim)(summary).reshape(-1, self.horizon, self.out_features)
+        mean    = nn.Dense(out_dim)(summary).reshape(-1, self.horizon, self.out_features)
         log_std = nn.Dense(out_dim)(summary).reshape(-1, self.horizon, self.out_features)
-
+        eps    = nn.Dense(out_dim)(summary).reshape(-1, self.horizon, self.out_features)
+        
         if self.instance_norm:
-            mean = mean * sd + mu              # back to raw units
-            log_std = log_std + jnp.log(sd)    # std scales with the window std
+            # Invert affine then instance norm:  x = (x_norm - beta) / gamma * sd + mu
+            mean    = (mean - beta) / (jnp.abs(gamma) + eps) * sd + mu
+            # sigma_raw = sigma_norm / |gamma| * sd  →  log_std shifts accordingly
+            log_std = log_std + jnp.log(sd) - jnp.log(jnp.abs(gamma) + eps)
+
         return mean, log_std
 
 

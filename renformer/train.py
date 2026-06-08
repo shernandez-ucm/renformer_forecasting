@@ -37,10 +37,10 @@ def mse_loss(mean, _log_std, target, _mask=None):
 
 def make_train_step(model, optimizer, loss_fn=masked_gaussian_nll):
     @jax.jit
-    def train_step(params, opt_state, x, y_norm, mask, rng):
+    def train_step(params, opt_state, x, y_target, mask, rng):
         def _loss(params):
             mean, log_std = model.apply(params, x, train=True, rngs={"dropout": rng})
-            return loss_fn(mean, log_std, y_norm, mask)
+            return loss_fn(mean, log_std, y_target, mask)
         loss, grads = jax.value_and_grad(_loss)(params)
         updates, new_opt_state = optimizer.update(grads, opt_state)
         return optax.apply_updates(params, updates), new_opt_state, loss
@@ -229,7 +229,7 @@ def train(
         for x_b, y_b, y_raw_b, mask_b, _ in val_ds.sequential_batches(batch_size * 4):
             target = y_raw_b if use_raw else y_b
             mean, log_std = eval_step(params, jnp.array(x_b))
-            val_loss = masked_gaussian_nll(mean, log_std, jnp.array(target), jnp.array(mask_b))
+            val_loss = loss_fn(mean, log_std, jnp.array(target), jnp.array(mask_b))
             val_losses.append(float(val_loss))
 
         t_loss = float(np.mean(train_losses))
