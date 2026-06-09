@@ -1,20 +1,20 @@
 """
-compare_models.py — Compare REnFormer (from checkpoint) vs TimesFM 2.5 (zero-shot)
+compare_models_skip.py — Compare REnFormer-Skip (from checkpoint) vs TimesFM 2.5 (zero-shot)
 on SEN Chile data.
 
 Evaluation:
-  • REnFormer: all overlapping sliding-window predictions over the test set
+  • REnFormer-Skip: all overlapping sliding-window predictions over the test set
   • TimesFM: non-overlapping 24 h windows over the test period (per-site univariate)
   • Active-mask metrics (MW > 0.1): MAE, RMSE, CRPS
 
 Usage
 -----
-python compare_models.py --csv data/Descarga_Generación_Real_2026-05-29_18-57-56.csv
-python compare_models.py --csv <path> --cache_dir data/       # reuse parquet cache
-python compare_models.py --csv <path> --checkpoint_dir checkpoint
-python compare_models.py --csv <path> --max_sites 50          # limit sites for speed
-python compare_models.py --csv <path> --skip_timesfm
-python compare_models.py --csv <path> --skip_renformer
+python compare_models_skip.py --csv data/Descarga_Generación_Real_2026-05-29_18-57-56.csv
+python compare_models_skip.py --csv <path> --cache_dir data/       # reuse parquet cache
+python compare_models_skip.py --csv <path> --checkpoint_dir checkpoint_skip
+python compare_models_skip.py --csv <path> --max_sites 50          # limit sites for speed
+python compare_models_skip.py --csv <path> --skip_timesfm
+python compare_models_skip.py --csv <path> --skip_renformer
 """
 import argparse
 import warnings
@@ -24,7 +24,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from renformer.model import TimeSeriesTransformer
+from renformer.model import TimeSeriesTransformerSkip
 from renformer.train import SENDataset, make_eval_step, load_checkpoint, checkpoint_exists
 from renformer.sen_data import (
     prepare_sen_dataset,
@@ -36,7 +36,7 @@ from renformer.metrics import EPSILON_MW, mae, rmse, crps_gaussian
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-LOOKBACK  = 168   # must match REnFormer
+LOOKBACK  = 168   # must match REnFormer-Skip
 HORIZON   = 24
 
 HPARAMS = dict(
@@ -51,25 +51,22 @@ HPARAMS = dict(
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
-# REnFormer checkpoint evaluation
+# REnFormer-Skip checkpoint evaluation
 # ──────────────────────────────────────────────────────────────────────────────
 
-def collect_renformer_predictions(test_norm, test_raw, norm_stats, checkpoint_dir, max_sites=None):
+def collect_renformer_skip_predictions(test_norm, test_raw, norm_stats, checkpoint_dir, max_sites=None):
     """
-    Load REnFormer from checkpoint and run all sliding-window predictions over
-    the test set (same protocol as run_experiment.py collect_predictions).
+    Load REnFormer-Skip from checkpoint and run all sliding-window predictions over
+    the test set (same protocol as run_experiment_skip.py collect_predictions).
 
     Returns (y_true_mw, y_pred_mw, y_sigma_mw) as flat 1-D arrays in MW units.
-
-    The model is trained on z-scored input with RevIN on top; its outputs are
-    back in z-score space. grand_mean/grand_std convert them to MW for scoring.
     """
     if max_sites is not None:
         cols      = test_norm.columns[:max_sites]
         test_norm = test_norm[cols]
         test_raw  = test_raw[cols]
 
-    model   = TimeSeriesTransformer(**HPARAMS)
+    model   = TimeSeriesTransformerSkip(**HPARAMS)
     test_ds = SENDataset(test_norm, test_raw, LOOKBACK, HORIZON)
 
     in_feat     = getattr(model, "in_features", model.out_features)
@@ -81,7 +78,7 @@ def collect_renformer_predictions(test_norm, test_raw, norm_stats, checkpoint_di
     mu_list, sigma_list, y_raw_list = [], [], []
 
     n_nonoverlap = len(range(0, test_ds.n_windows, HORIZON))
-    print(f"  REnFormer: evaluating {n_nonoverlap:,} non-overlapping windows …", flush=True)
+    print(f"  REnFormer-Skip: evaluating {n_nonoverlap:,} non-overlapping windows …", flush=True)
     for x_b, _, y_raw_b, _, _ in test_ds.sequential_batches(512, stride=HORIZON):
         mean, log_std = eval_step(params, jnp.array(x_b))
         mu_list.append(np.array(mean))
@@ -142,9 +139,9 @@ def run_timesfm_zero_shot(val_raw, test_raw, max_sites=None):
                        0.2533471,  0.5244005,  0.8416212,  1.2815516])
 
     n_test        = len(test_raw)
-    # Start at LOOKBACK so the first TimesFM target window aligns with REnFormer's
+    # Start at LOOKBACK so the first TimesFM target window aligns with REnFormer-Skip's
     # first target window (test[LOOKBACK:LOOKBACK+HORIZON]).  Windows before
-    # LOOKBACK cannot be matched by REnFormer anyway (needs full test context).
+    # LOOKBACK cannot be matched by REnFormer-Skip anyway (needs full test context).
     window_starts = list(range(LOOKBACK, n_test - HORIZON + 1, HORIZON))
     print(f"  TimesFM zero-shot: {n_sites} sites × {len(window_starts)} windows …", flush=True)
 
@@ -239,18 +236,18 @@ def run(args):
 
     results = {}
 
-    # ── 2. REnFormer from checkpoint ──────────────────────────────────────────
+    # ── 2. REnFormer-Skip from checkpoint ─────────────────────────────────────
     if not args.skip_renformer:
         if checkpoint_exists(args.checkpoint_dir):
-            print(f"\n─── REnFormer (checkpoint: {args.checkpoint_dir}) ───────────────────")
-            y_true, y_pred, y_sigma = collect_renformer_predictions(
+            print(f"\n─── REnFormer-Skip (checkpoint: {args.checkpoint_dir}) ───────────────────")
+            y_true, y_pred, y_sigma = collect_renformer_skip_predictions(
                 test_norm, test_raw, norm_stats,
                 checkpoint_dir=args.checkpoint_dir,
                 max_sites=args.max_sites,
             )
-            results["REnFormer (checkpoint)"] = compute_metrics(y_true, y_pred, y_sigma)
+            results["REnFormer-Skip (checkpoint)"] = compute_metrics(y_true, y_pred, y_sigma)
         else:
-            print(f"\nNo REnFormer checkpoint found at '{args.checkpoint_dir}' — skipping.")
+            print(f"\nNo REnFormer-Skip checkpoint found at '{args.checkpoint_dir}' — skipping.")
 
     # ── 3. TimesFM zero-shot ──────────────────────────────────────────────────
     if not args.skip_timesfm:
@@ -271,13 +268,13 @@ def run(args):
 
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser(description="Compare REnFormer vs TimesFM on SEN Chile.")
+    p = argparse.ArgumentParser(description="Compare REnFormer-Skip vs TimesFM on SEN Chile.")
     p.add_argument("--csv",              required=True,  help="Path to SEN Chile CSV")
-    p.add_argument("--cache_dir",        default=None,   help="Parquet cache directory (shared with run_experiment.py)")
-    p.add_argument("--checkpoint_dir",   default="checkpoints", help="Orbax checkpoint directory for REnFormer (default: checkpoints)")
+    p.add_argument("--cache_dir",        default=None,   help="Parquet cache directory (shared with run_experiment_skip.py)")
+    p.add_argument("--checkpoint_dir",   default="checkpoint_skip", help="Orbax checkpoint directory for REnFormer-Skip (default: checkpoint_skip)")
     p.add_argument("--max_sites",        type=int,       default=None,   help="Restrict to first N sites (faster smoke tests)")
     p.add_argument("--skip_timesfm",     action="store_true", help="Skip TimesFM zero-shot evaluation")
-    p.add_argument("--skip_renformer",   action="store_true", help="Skip REnFormer checkpoint evaluation")
+    p.add_argument("--skip_renformer",   action="store_true", help="Skip REnFormer-Skip checkpoint evaluation")
     p.add_argument("--out",              default=None,   help="Write JSON results to this file")
     args = p.parse_args()
 

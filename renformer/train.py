@@ -21,6 +21,7 @@ def masked_gaussian_nll(mean, log_std, target, mask):
     Masked NLL (Eq. 1 in paper). Only penalises timesteps where mask > 0
     (i.e. raw generation > epsilon, meaning non-trivial active generation).
     """
+    log_std = jnp.clip(log_std, -10.0, 10.0)   # prevent exp overflow / division by ~0
     var = jnp.exp(2.0 * log_std)
     nll = 0.5 * ((target - mean) ** 2 / var + 2.0 * log_std + jnp.log(2 * jnp.pi))
     return (nll * mask).sum() / (mask.sum() + 1e-6)
@@ -137,10 +138,16 @@ class SENDataset:
         t_idx = rng.integers(0, self.n_windows, size=batch_size)
         return self._fetch(s_idx, t_idx)
 
-    def sequential_batches(self, batch_size: int = 512):
-        """Yields all windows in (site-major, time-minor) order for evaluation."""
-        all_s = np.repeat(np.arange(self.S), self.n_windows)
-        all_t = np.tile(np.arange(self.n_windows), self.S)
+    def sequential_batches(self, batch_size: int = 512, stride: int = 1):
+        """Yields windows in (site-major, time-minor) order for evaluation.
+
+        stride=1  → all overlapping windows (default, training-set coverage).
+        stride=H  → non-overlapping windows; use when comparing against models
+                    evaluated on non-overlapping windows (e.g. TimesFM zero-shot).
+        """
+        t_indices = np.arange(0, self.n_windows, stride)
+        all_s = np.repeat(np.arange(self.S), len(t_indices))
+        all_t = np.tile(t_indices, self.S)
         for start in range(0, len(all_s), batch_size):
             sl = slice(start, start + batch_size)
             yield self._fetch(all_s[sl], all_t[sl])
@@ -203,7 +210,7 @@ def train(
     use_raw = train_target == "raw"   # supervise in raw MW (RevIN model) vs z-scored
 
     schedule  = optax.cosine_decay_schedule(lr, decay_steps=epochs * steps_per_epoch)
-    optimizer = optax.adam(schedule)
+    optimizer = optax.chain(optax.clip_by_global_norm(1.0), optax.adam(schedule))
     opt_state = optimizer.init(params)
 
     train_step = make_train_step(model, optimizer, loss_fn)

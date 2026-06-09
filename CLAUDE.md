@@ -30,6 +30,23 @@ python run_experiment.py --csv <path> --resume                  # skip training,
 ```
 Checkpoints are saved to `checkpoints/` by default (override with `--checkpoint_dir`).
 
+**REnFormer-Skip experiment** (macro skip-connection variant):
+```bash
+python run_experiment_skip.py --csv data/Descarga_Generación_Real_2026-05-29_18-57-56.csv
+python run_experiment_skip.py --csv <path> --cache_dir data/   # reuse parquet cache
+python run_experiment_skip.py --csv <path> --resume            # load from checkpoint_skip/
+```
+Checkpoints are saved to `checkpoint_skip/` by default (override with `--checkpoint_dir`).
+
+**Produce per-site forecast from a saved checkpoint**:
+```bash
+python forecast_checkpoint.py \
+    --csv  data/Descarga_Generación_Real_2026-05-29_18-57-56.csv \
+    --checkpoint checkpoints/renformer_params.pkl \
+    --out  forecasts/renformer_forecast.csv
+```
+Outputs columns `timestamp, site, mean_mw, std_mw, q10_mw, q90_mw` plus a `__total__` aggregate row per hour.
+
 **NeuralForecast comparison** (TSMixer, DeepAR, TFT, Autoformer vs REnFormer):
 ```bash
 python compare_models.py --csv <path>
@@ -66,29 +83,38 @@ python eda_generacion.py
 
 ```
 renformer/
-  model.py      — TransformerBlock → TransformerEncoder → TimeSeriesTransformer
+  model.py      — TransformerBlock → TransformerEncoder/SkipTransformerEncoder → TimeSeriesTransformer/TimeSeriesTransformerSkip
   train.py      — loss functions, JIT step factories, SENDataset, Orbax checkpointing, training loop
   sen_data.py   — SEN Chile CSV loader, site-matrix builder, chronological split, normalization, parquet cache
   metrics.py    — MAE, RMSE, CRPS (active-mask aware)
   baselines.py  — Persistence, per-site MLP, per-site LSTM (all in JAX/Flax)
   data_utils.py — Monash .tsf parser (legacy; not used by run_experiment.py)
-run_experiment.py   — end-to-end paper reproduction script
-compare_models.py   — NeuralForecast benchmark (TSMixer, DeepAR, TFT, Autoformer)
-forecast_example.py — TimesFM 2.5 zero-shot all-generation forecast
-forecast_solar.py   — TimesFM 2.5 zero-shot solar-only forecast
-finetune_solar.py   — TimesFM 2.5 fine-tuning (PyTorch) on solar data
-synthetic_data.py   — generates random (X, Y) tensors and runs a short training loop; validates the stack without real data
-baseline_models.py  — pandas/numpy statistical baselines (arithmetic mean, rolling mean, seasonal naive); single-site, operates on DataFrames; separate from renformer/baselines.py which implements JAX/Flax Persistence/MLP/LSTM for multi-site SEN evaluation
-paper/              — LaTeX source (renformer_paper.tex) and bibliography (renformer.bib)
+run_experiment.py      — end-to-end paper reproduction script; checkpoints to checkpoints/
+run_experiment_skip.py — REnFormer-Skip variant (macro encoder skip-connection); checkpoints to checkpoint_skip/
+forecast_checkpoint.py — load saved params and produce per-site probabilistic forecast CSV
+compare_models.py      — NeuralForecast benchmark (TSMixer, DeepAR, TFT, Autoformer)
+forecast_example.py    — TimesFM 2.5 zero-shot all-generation forecast
+forecast_solar.py      — TimesFM 2.5 zero-shot solar-only forecast
+finetune_solar.py      — TimesFM 2.5 fine-tuning (PyTorch) on solar data
+synthetic_data.py      — generates random (X, Y) tensors and runs a short training loop; validates the stack without real data
+baseline_models.py     — pandas/numpy statistical baselines (arithmetic mean, rolling mean, seasonal naive); single-site, operates on DataFrames; separate from renformer/baselines.py which implements JAX/Flax Persistence/MLP/LSTM for multi-site SEN evaluation
+paper/                 — LaTeX source (renformer_paper.tex) and bibliography (renformer.bib)
 ```
 
 ### Model (`model.py`)
 
-`TimeSeriesTransformer` takes `(batch, seq_len, in_features)`:
-1. Optionally applies **RevIN** (reversible instance normalisation) on channel 0 (power); exogenous channels (calendar features) are left unchanged.
+Two model variants share the same hyperparameters and RevIN/head design:
+
+**`TimeSeriesTransformer`** (base):
+1. Applies **RevIN** with learnable affine parameters (gamma, beta) on the power channel(s); exogenous channels (calendar features) are left unchanged.
 2. `TransformerEncoder`: linear projection → sinusoidal PE → N × post-LayerNorm `TransformerBlock` (self-attention + MLP with GELU).
 3. **Last-token pooling** → two parallel `Dense` heads for `mean` and `log_std`, each reshaped to `(batch, horizon, out_features)`.
-4. If RevIN is on, outputs are de-normalised back to raw units before returning.
+4. Outputs are de-normalised to raw MW units via the RevIN inverse before returning.
+
+**`TimeSeriesTransformerSkip`** (ablation, `run_experiment_skip.py`):
+- Replaces `TransformerEncoder` with `SkipTransformerEncoder`, which saves the projected+PE representation (`skip = x`) before the N blocks and adds it back after: `LayerNorm(x + skip)`.
+- Uses a simpler instance norm (plain mean/std, no learnable gamma/beta) instead of full RevIN.
+- All other hyperparameters are identical, making it a drop-in ablation.
 
 Paper hyperparameters: `d_model=128, num_heads=4, num_layers=4, mlp_dim=256, dropout_rate=0.1, max_len=168` (7-day lookback), `horizon=24`.
 

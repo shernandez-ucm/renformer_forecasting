@@ -166,13 +166,13 @@ class TimeSeriesTransformer(nn.Module):
         out_dim = self.horizon * self.out_features
         mean    = nn.Dense(out_dim)(summary).reshape(-1, self.horizon, self.out_features)
         log_std = nn.Dense(out_dim)(summary).reshape(-1, self.horizon, self.out_features)
-        eps    = nn.Dense(out_dim)(summary).reshape(-1, self.horizon, self.out_features)
-        
+
         if self.instance_norm:
+            _eps = 1e-5  # numerical stability for RevIN inverse — must stay constant
             # Invert affine then instance norm:  x = (x_norm - beta) / gamma * sd + mu
-            mean    = (mean - beta) / (jnp.abs(gamma) + eps) * sd + mu
+            mean    = (mean - beta) / (jnp.abs(gamma) + _eps) * sd + mu
             # sigma_raw = sigma_norm / |gamma| * sd  →  log_std shifts accordingly
-            log_std = log_std + jnp.log(sd) - jnp.log(jnp.abs(gamma) + eps)
+            log_std = log_std + jnp.log(sd) - jnp.log(jnp.abs(gamma) + _eps)
 
         return mean, log_std
 
