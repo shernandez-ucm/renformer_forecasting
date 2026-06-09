@@ -1,30 +1,40 @@
-Loading preprocessed dataset from cache: data/
-
-Sites used : 3
+Sites used : 5
 Test period: 2025-01-01 → 2026-05-29
 
 ─── REnFormer (checkpoint: checkpoint) ───────────────────
-  REnFormer: evaluating 36,435 windows …
+  REnFormer: evaluating 507 non-overlapping windows …
 
 ─── TimesFM 2.5 (zero-shot) ─────────────────────────────────────────
+Fetching 15 files: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████| 15/15 [00:00<00:00, 11031.84it/s]
+Download complete: : 0.00B [00:00, ?B/s]                                                                                                         | 0/15 [00:00<?, ?it/s]
 Compiling model...
 Compiling done.
-  TimesFM zero-shot: 3 sites × 514 windows …
-    … 50/514 windows done
-    … 100/514 windows done
-    … 150/514 windows done
-    … 200/514 windows done
-    … 250/514 windows done
-    … 300/514 windows done
-    … 350/514 windows done
-    … 400/514 windows done
-    … 450/514 windows done
-    … 500/514 windows done
+  TimesFM zero-shot: 5 sites × 507 windows …
+    … 50/507 windows done
+    … 100/507 windows done
+    … 150/507 windows done
+    … 200/507 windows done
+    … 250/507 windows done
+    … 300/507 windows done
+    … 350/507 windows done
+    … 400/507 windows done
+    … 450/507 windows done
+    … 500/507 windows done
 
 ═════════════════════════════════════════════════════════════════
 FINAL COMPARISON
 ═════════════════════════════════════════════════════════════════
 Method                                MAE       RMSE         CRPS
 ─────────────────────────────────────────────────────────────────
-REnFormer (checkpoint)           116.1696   126.8884    9881.0912
-TimesFM 2.5 (zero-shot)            0.3918     0.5906       0.2968
+REnFormer (checkpoint)            37.8803    57.1045      24.6077
+TimesFM 2.5 (zero-shot)            0.4168     0.6300       0.3115
+
+
+
+═════════════════════════════════════════════════════════════════
+FINAL COMPARISON
+═════════════════════════════════════════════════════════════════
+Method                                MAE       RMSE         CRPS
+─────────────────────────────────────────────────────────────────
+REnFormer-Skip (checkpoint)       34.6976    48.3061      23.4976
+TimesFM 2.5 (zero-shot)            0.4168     0.6300       0.3115

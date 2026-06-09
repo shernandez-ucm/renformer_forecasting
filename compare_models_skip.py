@@ -54,12 +54,16 @@ HPARAMS = dict(
 # REnFormer-Skip checkpoint evaluation
 # ──────────────────────────────────────────────────────────────────────────────
 
-def collect_renformer_skip_predictions(test_norm, test_raw, norm_stats, checkpoint_dir, max_sites=None):
+def collect_renformer_skip_predictions(test_norm, test_raw, checkpoint_dir, max_sites=None):
     """
     Load REnFormer-Skip from checkpoint and run all sliding-window predictions over
     the test set (same protocol as run_experiment_skip.py collect_predictions).
 
     Returns (y_true_mw, y_pred_mw, y_sigma_mw) as flat 1-D arrays in MW units.
+
+    The model is trained on raw-MW input (raw_input=True, instance norm handles
+    per-window scale) and supervised against raw MW (train_target="raw"),
+    so its mean/log_std outputs are already in MW — no de-normalization needed.
     """
     if max_sites is not None:
         cols      = test_norm.columns[:max_sites]
@@ -67,7 +71,7 @@ def collect_renformer_skip_predictions(test_norm, test_raw, norm_stats, checkpoi
         test_raw  = test_raw[cols]
 
     model   = TimeSeriesTransformerSkip(**HPARAMS)
-    test_ds = SENDataset(test_norm, test_raw, LOOKBACK, HORIZON)
+    test_ds = SENDataset(test_norm, test_raw, LOOKBACK, HORIZON, raw_input=True)
 
     in_feat     = getattr(model, "in_features", model.out_features)
     dummy_x     = jnp.zeros((1, LOOKBACK, in_feat))
@@ -85,12 +89,9 @@ def collect_renformer_skip_predictions(test_norm, test_raw, norm_stats, checkpoi
         sigma_list.append(np.array(jnp.exp(log_std)))
         y_raw_list.append(y_raw_b)
 
-    grand_mean = float(norm_stats["mean"].values.mean())
-    grand_std  = float(norm_stats["std"].values.mean())
-
     y_true  = np.concatenate(y_raw_list).reshape(-1)
-    y_pred  = np.concatenate(mu_list).reshape(-1)    * grand_std + grand_mean
-    y_sigma = np.concatenate(sigma_list).reshape(-1) * grand_std
+    y_pred  = np.concatenate(mu_list).reshape(-1)
+    y_sigma = np.concatenate(sigma_list).reshape(-1)
     return y_true, y_pred, y_sigma
 
 
@@ -228,7 +229,7 @@ def run(args):
         if args.cache_dir:
             save_prepared_dataset(result, args.cache_dir)
 
-    (_, _), (val_raw, _), (test_raw, test_norm), norm_stats = result
+    (_, _), (val_raw, _), (test_raw, test_norm), _norm_stats = result
 
     n_sites = test_raw.shape[1] if args.max_sites is None else min(args.max_sites, test_raw.shape[1])
     print(f"\nSites used : {n_sites}")
@@ -241,7 +242,7 @@ def run(args):
         if checkpoint_exists(args.checkpoint_dir):
             print(f"\n─── REnFormer-Skip (checkpoint: {args.checkpoint_dir}) ───────────────────")
             y_true, y_pred, y_sigma = collect_renformer_skip_predictions(
-                test_norm, test_raw, norm_stats,
+                test_norm, test_raw,
                 checkpoint_dir=args.checkpoint_dir,
                 max_sites=args.max_sites,
             )

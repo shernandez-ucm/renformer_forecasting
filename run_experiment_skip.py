@@ -62,7 +62,7 @@ def collect_predictions(params, model, dataset: SENDataset, batch_size=512):
     )
 
 
-def last_window_metrics(params, model, test_ds: SENDataset, grand_mean, grand_std):
+def last_window_metrics(params, model, test_ds: SENDataset):
     eval_step = make_eval_step(model)
     last_t     = test_ds.n_windows - 1
     all_s      = np.arange(test_ds.S)
@@ -72,10 +72,7 @@ def last_window_metrics(params, model, test_ds: SENDataset, grand_mean, grand_st
     mean, log_std = eval_step(params, jnp.array(X))
     sigma = np.array(jnp.exp(log_std))
 
-    return evaluate(
-        Y_raw, np.array(mean), sigma,
-        denorm_mean=grand_mean, denorm_std=grand_std,
-    )
+    return evaluate(Y_raw, np.array(mean), sigma)
 
 
 def run(args):
@@ -93,16 +90,16 @@ def run(args):
     (train_raw, train_norm), \
     (val_raw,   val_norm), \
     (test_raw,  test_norm), \
-    norm_stats = result
+    _norm_stats = result
 
-    train_ds = SENDataset(train_norm, train_raw, LOOKBACK, HORIZON)
-    val_ds   = SENDataset(val_norm,   val_raw,   LOOKBACK, HORIZON)
-    test_ds  = SENDataset(test_norm,  test_raw,  LOOKBACK, HORIZON)
+    # raw_input=True: the model sees raw MW and the instance norm handles
+    # per-window scale, so per-site capacity information is preserved
+    # (cf. TimesFM's normalize_inputs=True). Outputs are directly in MW.
+    train_ds = SENDataset(train_norm, train_raw, LOOKBACK, HORIZON, raw_input=True)
+    val_ds   = SENDataset(val_norm,   val_raw,   LOOKBACK, HORIZON, raw_input=True)
+    test_ds  = SENDataset(test_norm,  test_raw,  LOOKBACK, HORIZON, raw_input=True)
 
     print(f"\nDataset sizes  train={len(train_ds):,}  val={len(val_ds):,}  test={len(test_ds):,}")
-
-    grand_mean = float(norm_stats["mean"].values.mean())
-    grand_std  = float(norm_stats["std"].values.mean())
 
     # ------------------------------------------------------------------
     # 2. Train REnFormer-Skip  (or restore from checkpoint with --resume)
@@ -134,14 +131,14 @@ def run(args):
     # ------------------------------------------------------------------
     print("\n--- Test-set evaluation ---")
     y_true, mu, sigma = collect_predictions(params, model, test_ds)
-    test_metrics = evaluate(y_true, mu, sigma, denorm_mean=grand_mean, denorm_std=grand_std)
+    test_metrics = evaluate(y_true, mu, sigma)
     print_results_table({"REnFormer-Skip (test)": test_metrics})
 
     # ------------------------------------------------------------------
     # 4. Last-window performance
     # ------------------------------------------------------------------
     print(f"\n--- Last {LOOKBACK}-hour window → {HORIZON}-hour forecast ---")
-    last_metrics = last_window_metrics(params, model, test_ds, grand_mean, grand_std)
+    last_metrics = last_window_metrics(params, model, test_ds)
     print_results_table({"REnFormer-Skip (last window)": last_metrics})
 
     return params, history

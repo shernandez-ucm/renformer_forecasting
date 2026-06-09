@@ -20,28 +20,30 @@ Key dependencies: `jax==0.10.1`, `jaxlib==0.10.1` (CUDA 12), `flax==0.12.7`, `op
 
 ## Running the Code
 
+The main SEN data file is `data/data.csv`. A pre-built parquet cache lives in `data/` so you can skip re-parsing the CSV entirely with `--cache_dir data/`.
+
 **Full REnFormer experiment** (real SEN Chile data):
 ```bash
-python run_experiment.py --csv data/Descarga_Generación_Real_2026-05-29_18-57-56.csv
+python run_experiment.py --csv data/data.csv
+python run_experiment.py --csv data/data.csv --cache_dir data/  # use parquet cache, skip CSV parse
 python run_experiment.py --csv <path> --skip_baselines          # faster, skips MLP/LSTM
 python run_experiment.py --csv <path> --ablation                # also trains MSE variant
-python run_experiment.py --csv <path> --cache_dir data/cache/   # cache preprocessed parquet
 python run_experiment.py --csv <path> --resume                  # skip training, load checkpoint
 ```
 Checkpoints are saved to `checkpoints/` by default (override with `--checkpoint_dir`).
 
 **REnFormer-Skip experiment** (macro skip-connection variant):
 ```bash
-python run_experiment_skip.py --csv data/Descarga_Generación_Real_2026-05-29_18-57-56.csv
+python run_experiment_skip.py --csv data/data.csv
 python run_experiment_skip.py --csv <path> --cache_dir data/   # reuse parquet cache
-python run_experiment_skip.py --csv <path> --resume            # load from checkpoint_skip/
+python run_experiment_skip.py --csv <path> --resume            # load from checkpoints_skip/
 ```
-Checkpoints are saved to `checkpoint_skip/` by default (override with `--checkpoint_dir`).
+Checkpoints are saved to `checkpoints_skip/` by default (override with `--checkpoint_dir`).
 
 **Produce per-site forecast from a saved checkpoint**:
 ```bash
 python forecast_checkpoint.py \
-    --csv  data/Descarga_Generación_Real_2026-05-29_18-57-56.csv \
+    --csv  data/data.csv \
     --checkpoint checkpoints/renformer_params.pkl \
     --out  forecasts/renformer_forecast.csv
 ```
@@ -54,6 +56,16 @@ python compare_models.py --csv <path> --models deepar tft       # subset of mode
 python compare_models.py --csv <path> --zero_shot               # no SEN training
 python compare_models.py --csv <path> --max_sites 50            # limit sites for speed
 python compare_models.py --cache_dir data/cache/ --csv <path>   # reuse parquet cache
+```
+
+**REnFormer-Skip vs TimesFM comparison** (loads existing checkpoint, no retraining):
+```bash
+python compare_models_skip.py --csv <path>
+python compare_models_skip.py --csv <path> --cache_dir data/       # reuse parquet cache
+python compare_models_skip.py --csv <path> --checkpoint_dir checkpoint_skip
+python compare_models_skip.py --csv <path> --max_sites 50          # limit sites for speed
+python compare_models_skip.py --csv <path> --skip_timesfm          # REnFormer-Skip only
+python compare_models_skip.py --csv <path> --skip_renformer        # TimesFM only
 ```
 
 **TimesFM zero-shot forecasts** (no training needed):
@@ -90,9 +102,10 @@ renformer/
   baselines.py  — Persistence, per-site MLP, per-site LSTM (all in JAX/Flax)
   data_utils.py — Monash .tsf parser (legacy; not used by run_experiment.py)
 run_experiment.py      — end-to-end paper reproduction script; checkpoints to checkpoints/
-run_experiment_skip.py — REnFormer-Skip variant (macro encoder skip-connection); checkpoints to checkpoint_skip/
+run_experiment_skip.py — REnFormer-Skip variant (macro encoder skip-connection); checkpoints to checkpoints_skip/
 forecast_checkpoint.py — load saved params and produce per-site probabilistic forecast CSV
 compare_models.py      — NeuralForecast benchmark (TSMixer, DeepAR, TFT, Autoformer)
+compare_models_skip.py — REnFormer-Skip vs TimesFM 2.5 comparison (loads from checkpoint_skip by default)
 forecast_example.py    — TimesFM 2.5 zero-shot all-generation forecast
 forecast_solar.py      — TimesFM 2.5 zero-shot solar-only forecast
 finetune_solar.py      — TimesFM 2.5 fine-tuning (PyTorch) on solar data
@@ -132,6 +145,8 @@ Pipeline: `load_sen_csv` → `build_site_matrix` (pivot to `(time × site)`, fil
 
 `make_train_step` / `make_eval_step` return `@jax.jit`-compiled functions closed over the model and optimizer. The training loop uses cosine-decay Adam with `train_target="raw"` (supervise in MW, not z-score, when RevIN is active).
 
+The experiment scripts build datasets with `raw_input=True`: the model receives **raw MW** input and RevIN/instance-norm handles per-window scale (mirroring TimesFM's `normalize_inputs=True`), so per-site capacity information is preserved and model outputs are directly in MW. Consequently all evaluations use `evaluate()` / `compute_metrics()` **without** de-normalization arguments — predictions are never rescaled. Checkpoints trained under the older z-scored-input configuration are incompatible (they load, but produce wrong-scale outputs) and must be retrained.
+
 Loss: `masked_gaussian_nll` — only penalises timesteps where raw generation > `EPSILON_MW = 0.1`.
 
 Checkpoints use Orbax (`save_checkpoint` / `load_checkpoint`) with `max_to_keep=1`.
@@ -142,4 +157,4 @@ Checkpoints use Orbax (`save_checkpoint` / `load_checkpoint`) with `max_to_keep=
 
 ### Evaluation
 
-`metrics.evaluate()` computes MAE, RMSE, and optionally CRPS, all restricted to the active mask (`y_raw > 0.1 MW`). Pass `denorm_mean` / `denorm_std` to get MW-scale metrics matching the paper; omit them for normalised-space metrics.
+`metrics.evaluate()` computes MAE, RMSE, and optionally CRPS, all restricted to the active mask (`y_raw > 0.1 MW`). With `raw_input=True` training the model's predictions are already in MW, so `evaluate()` is called without `denorm_mean` / `denorm_std` (those arguments only apply to models that predict in z-score space).

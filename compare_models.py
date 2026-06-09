@@ -24,7 +24,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from renformer.model import TimeSeriesTransformer
+from compare_models_skip import collect_renformer_skip_predictions
+from renformer.model import TimeSeriesTransformer,TimeSeriesTransformerSkip
 from renformer.train import SENDataset, make_eval_step, load_checkpoint, checkpoint_exists
 from renformer.sen_data import (
     prepare_sen_dataset,
@@ -54,15 +55,16 @@ HPARAMS = dict(
 # REnFormer checkpoint evaluation
 # ──────────────────────────────────────────────────────────────────────────────
 
-def collect_renformer_predictions(test_norm, test_raw, norm_stats, checkpoint_dir, max_sites=None):
+def collect_renformer_predictions(test_norm, test_raw, checkpoint_dir, max_sites=None):
     """
     Load REnFormer from checkpoint and run all sliding-window predictions over
     the test set (same protocol as run_experiment.py collect_predictions).
 
     Returns (y_true_mw, y_pred_mw, y_sigma_mw) as flat 1-D arrays in MW units.
 
-    The model is trained on z-scored input with RevIN on top; its outputs are
-    back in z-score space. grand_mean/grand_std convert them to MW for scoring.
+    The model is trained on raw-MW input (raw_input=True, RevIN handles
+    per-window scale) and supervised against raw MW (train_target="raw"),
+    so its mean/log_std outputs are already in MW — no de-normalization needed.
     """
     if max_sites is not None:
         cols      = test_norm.columns[:max_sites]
@@ -70,7 +72,7 @@ def collect_renformer_predictions(test_norm, test_raw, norm_stats, checkpoint_di
         test_raw  = test_raw[cols]
 
     model   = TimeSeriesTransformer(**HPARAMS)
-    test_ds = SENDataset(test_norm, test_raw, LOOKBACK, HORIZON)
+    test_ds = SENDataset(test_norm, test_raw, LOOKBACK, HORIZON, raw_input=True)
 
     in_feat     = getattr(model, "in_features", model.out_features)
     dummy_x     = jnp.zeros((1, LOOKBACK, in_feat))
@@ -88,14 +90,49 @@ def collect_renformer_predictions(test_norm, test_raw, norm_stats, checkpoint_di
         sigma_list.append(np.array(jnp.exp(log_std)))
         y_raw_list.append(y_raw_b)
 
-    grand_mean = float(norm_stats["mean"].values.mean())
-    grand_std  = float(norm_stats["std"].values.mean())
-
     y_true  = np.concatenate(y_raw_list).reshape(-1)
-    y_pred  = np.concatenate(mu_list).reshape(-1)    * grand_std + grand_mean
-    y_sigma = np.concatenate(sigma_list).reshape(-1) * grand_std
+    y_pred  = np.concatenate(mu_list).reshape(-1)
+    y_sigma = np.concatenate(sigma_list).reshape(-1)
     return y_true, y_pred, y_sigma
 
+def collect_renformer_skip_predictions(test_norm, test_raw, checkpoint_dir, max_sites=None):
+    """
+    Load REnFormer-Skip from checkpoint and run all sliding-window predictions over
+    the test set (same protocol as run_experiment_skip.py collect_predictions).
+
+    Returns (y_true_mw, y_pred_mw, y_sigma_mw) as flat 1-D arrays in MW units.
+
+    The model is trained with train_target="raw" (supervised against raw MW),
+    so its mean/log_std outputs are already in MW — no de-normalization needed.
+    """
+    if max_sites is not None:
+        cols      = test_norm.columns[:max_sites]
+        test_norm = test_norm[cols]
+        test_raw  = test_raw[cols]
+
+    model   = TimeSeriesTransformerSkip(**HPARAMS)
+    test_ds = SENDataset(test_norm, test_raw, LOOKBACK, HORIZON)
+
+    in_feat     = getattr(model, "in_features", model.out_features)
+    dummy_x     = jnp.zeros((1, LOOKBACK, in_feat))
+    params_like = model.init(jax.random.PRNGKey(0), dummy_x, train=False)
+    params      = load_checkpoint(params_like, checkpoint_dir)
+
+    eval_step = make_eval_step(model)
+    mu_list, sigma_list, y_raw_list = [], [], []
+
+    n_nonoverlap = len(range(0, test_ds.n_windows, HORIZON))
+    print(f"  REnFormer-Skip: evaluating {n_nonoverlap:,} non-overlapping windows …", flush=True)
+    for x_b, _, y_raw_b, _, _ in test_ds.sequential_batches(512, stride=HORIZON):
+        mean, log_std = eval_step(params, jnp.array(x_b))
+        mu_list.append(np.array(mean))
+        sigma_list.append(np.array(jnp.exp(log_std)))
+        y_raw_list.append(y_raw_b)
+
+    y_true  = np.concatenate(y_raw_list).reshape(-1)
+    y_pred  = np.concatenate(mu_list).reshape(-1)
+    y_sigma = np.concatenate(sigma_list).reshape(-1)
+    return y_true, y_pred, y_sigma
 
 # ──────────────────────────────────────────────────────────────────────────────
 # TimesFM zero-shot evaluation
@@ -231,7 +268,7 @@ def run(args):
         if args.cache_dir:
             save_prepared_dataset(result, args.cache_dir)
 
-    (_, _), (val_raw, _), (test_raw, test_norm), norm_stats = result
+    (_, _), (val_raw, _), (test_raw, test_norm), _norm_stats = result
 
     n_sites = test_raw.shape[1] if args.max_sites is None else min(args.max_sites, test_raw.shape[1])
     print(f"\nSites used : {n_sites}")
@@ -244,7 +281,7 @@ def run(args):
         if checkpoint_exists(args.checkpoint_dir):
             print(f"\n─── REnFormer (checkpoint: {args.checkpoint_dir}) ───────────────────")
             y_true, y_pred, y_sigma = collect_renformer_predictions(
-                test_norm, test_raw, norm_stats,
+                test_norm, test_raw,
                 checkpoint_dir=args.checkpoint_dir,
                 max_sites=args.max_sites,
             )
@@ -259,6 +296,19 @@ def run(args):
             val_raw, test_raw, max_sites=args.max_sites
         )
         results["TimesFM 2.5 (zero-shot)"] = compute_metrics(y_true, y_pred, y_sigma)
+
+    # ── 2. REnFormer-Skip from checkpoint ─────────────────────────────────────
+    if not args.skip_renformer:
+        if checkpoint_exists(args.checkpoint_dir):
+            print(f"\n─── REnFormer-Skip (checkpoint: {args.checkpoint_dir}) ───────────────────")
+            y_true, y_pred, y_sigma = collect_renformer_skip_predictions(
+                test_norm, test_raw,
+                checkpoint_dir=args.checkpoint_dir,
+                max_sites=args.max_sites,
+            )
+            results["REnFormer-Skip (checkpoint)"] = compute_metrics(y_true, y_pred, y_sigma)
+        else:
+            print(f"\nNo REnFormer-Skip checkpoint found at '{args.checkpoint_dir}' — skipping.")
 
     # ── 4. Summary table ──────────────────────────────────────────────────────
     print_table(results, header="═" * 65 + "\nFINAL COMPARISON\n" + "═" * 65)

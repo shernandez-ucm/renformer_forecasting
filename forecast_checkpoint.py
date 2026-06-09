@@ -55,23 +55,23 @@ def load_checkpoint(path: str):
 
 def run(args):
     # ------------------------------------------------------------------
-    # 1. Data — run the full pipeline to get the normalised series and
-    #    per-site z-score statistics that were used during training.
+    # 1. Data — run the full pipeline to get the raw MW series.
     # ------------------------------------------------------------------
     (train_raw, train_norm), \
     (val_raw,   val_norm), \
     (test_raw,  test_norm), \
-    norm_stats = prepare_sen_dataset(args.csv)
+    _norm_stats = prepare_sen_dataset(args.csv)
 
-    # Full normalised series in chronological order.
-    full_norm = pd.concat([train_norm, val_norm, test_norm])  # (T, S)
-    sites = full_norm.columns.tolist()
+    # Full raw-MW series in chronological order. The model is trained with
+    # raw_input=True (RevIN normalises per window), so it expects raw MW.
+    full_raw = pd.concat([train_raw, val_raw, test_raw])  # (T, S)
+    sites = full_raw.columns.tolist()
     S = len(sites)
 
-    last_ts = full_norm.index[-1]
-    context_norm = full_norm.iloc[-LOOKBACK:]               # (LOOKBACK, S)
+    last_ts = full_raw.index[-1]
+    context_raw = full_raw.iloc[-LOOKBACK:]               # (LOOKBACK, S)
 
-    print(f"\nContext window : {context_norm.index[0]}  →  {last_ts}")
+    print(f"\nContext window : {context_raw.index[0]}  →  {last_ts}")
     print(f"Forecast window: {last_ts + pd.Timedelta(hours=1)}  →  "
           f"{last_ts + pd.Timedelta(hours=HORIZON)}")
     print(f"Sites          : {S}")
@@ -79,8 +79,8 @@ def run(args):
     # ------------------------------------------------------------------
     # 2. Build input batch  (S, LOOKBACK, 1)
     # ------------------------------------------------------------------
-    # arr[s, t, 0] = z-scored generation for site s at time t
-    X = context_norm.values.T[:, :, np.newaxis].astype(np.float32)
+    # arr[s, t, 0] = raw MW generation for site s at time t
+    X = context_raw.values.T[:, :, np.newaxis].astype(np.float32)
 
     # ------------------------------------------------------------------
     # 3. Load model and checkpoint
@@ -91,7 +91,8 @@ def run(args):
     eval_step = make_eval_step(model)
 
     # ------------------------------------------------------------------
-    # 4. Inference in batches  →  (S, H, 1) normalised mean / std
+    # 4. Inference in batches  →  (S, H, 1) mean / std, already in MW
+    #    (RevIN inverse inside the model maps back to input units)
     # ------------------------------------------------------------------
     mu_list, sigma_list = [], []
     for start in range(0, S, args.batch_size):
@@ -100,23 +101,12 @@ def run(args):
         mu_list.append(np.array(mean_b))
         sigma_list.append(np.array(jnp.exp(log_std_b)))
 
-    mu_norm    = np.concatenate(mu_list)    # (S, H, 1)
-    sigma_norm = np.concatenate(sigma_list) # (S, H, 1)
+    mean_mw = np.concatenate(mu_list)     # (S, H, 1)
+    std_mw  = np.concatenate(sigma_list)  # (S, H, 1)
+    mean_mw = np.clip(mean_mw, 0.0, None)  # solar generation is non-negative
 
     # ------------------------------------------------------------------
-    # 5. Denormalise to MW using per-site z-score statistics
-    # ------------------------------------------------------------------
-    # norm_stats["mean"] / ["std"] are pandas Series indexed by site name;
-    # reindex to guarantee alignment with `sites`.
-    site_mean = norm_stats["mean"].reindex(sites).values[:, np.newaxis, np.newaxis]
-    site_std  = norm_stats["std"].reindex(sites).values[:, np.newaxis, np.newaxis]
-
-    mean_mw  = mu_norm    * site_std + site_mean   # (S, H, 1)
-    std_mw   = sigma_norm * site_std               # (S, H, 1)  — std shifts by scale only
-    mean_mw  = np.clip(mean_mw, 0.0, None)         # solar generation is non-negative
-
-    # ------------------------------------------------------------------
-    # 6. Build per-site forecast DataFrame
+    # 5. Build per-site forecast DataFrame
     # ------------------------------------------------------------------
     forecast_idx = pd.date_range(
         last_ts + pd.Timedelta(hours=1), periods=HORIZON, freq="h"
@@ -152,7 +142,7 @@ def run(args):
     fc = pd.DataFrame(rows)
 
     # ------------------------------------------------------------------
-    # 7. Print aggregate summary
+    # 6. Print aggregate summary
     # ------------------------------------------------------------------
     total_fc = fc[fc["site"] == "__total__"].set_index("timestamp")
     peak_h   = total_fc["mean_mw"].idxmax()
@@ -165,7 +155,7 @@ def run(args):
     print(f"\nPeak forecast : {total_fc.loc[peak_h, 'mean_mw']:.1f} MW  at {peak_h}")
 
     # ------------------------------------------------------------------
-    # 8. Save
+    # 7. Save
     # ------------------------------------------------------------------
     if args.out:
         import os
