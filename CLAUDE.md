@@ -76,7 +76,16 @@ python compare_models_skip.py --csv <path> --checkpoint_dir checkpoint_skip
 python compare_models_skip.py --csv <path> --max_sites 50          # limit sites for speed
 python compare_models_skip.py --csv <path> --skip_timesfm          # REnFormer-Skip only
 python compare_models_skip.py --csv <path> --skip_renformer        # TimesFM only
+python compare_models_skip.py --csv <path> --out results.json      # save metrics as JSON
 ```
+
+**Site-scaling sweep** (REnFormer-Skip vs TimesFM across increasing `--max_sites`):
+```bash
+./run_scaling_skip.sh                  # sweep max_sites 10, 60, 110, … 291
+STEP=10 ./run_scaling_skip.sh          # finer sweep
+CHECKPOINT_DIR=checkpoint_skip OUT_DIR=results_scaling ./run_scaling_skip.sh
+```
+Wraps `compare_models_skip.py`, writing one `sites_<N>.json` + `sites_<N>.log` per run to `results_scaling/`. Existing non-empty JSONs are skipped (delete to re-run), so the sweep is resumable. Configured via env vars: `CSV`, `CACHE_DIR`, `CHECKPOINT_DIR` (default `checkpoint_skip`), `OUT_DIR`, `STEP` (default 50 — the header comment saying 10 is stale), `MIN_SITES`, `MAX_SITES` (291 = all sites, always included as the final point). It activates the venv itself.
 
 **TimesFM zero-shot forecasts** (no training needed):
 ```bash
@@ -116,6 +125,7 @@ run_experiment_skip.py — REnFormer-Skip variant (macro encoder skip-connection
 forecast_checkpoint.py — load saved params and produce per-site probabilistic forecast CSV
 compare_models.py      — REnFormer + REnFormer-Skip (from checkpoint) vs TimesFM 2.5 zero-shot; imports from compare_models_skip.py
 compare_models_skip.py — REnFormer-Skip vs TimesFM 2.5 comparison (loads from checkpoint_skip by default)
+run_scaling_skip.sh    — resumable sweep of compare_models_skip.py over --max_sites; JSON+log per point → results_scaling/
 forecast_example.py    — TimesFM 2.5 zero-shot all-generation forecast
 forecast_solar.py      — TimesFM 2.5 zero-shot solar-only forecast
 finetune_solar.py      — TimesFM 2.5 fine-tuning (PyTorch) on solar data

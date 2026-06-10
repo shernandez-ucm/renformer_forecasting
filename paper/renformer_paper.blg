@@ -1,0 +1,56 @@
+This is BibTeX, Version 0.99d (TeX Live 2023/Debian)
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: renformer_paper.aux
+The style file: IEEEtran.bst
+Reallocated singl_function (elt_size=4) to 100 items from 50.
+Reallocated singl_function (elt_size=4) to 100 items from 50.
+Reallocated singl_function (elt_size=4) to 100 items from 50.
+Reallocated wiz_functions (elt_size=4) to 6000 items from 3000.
+Reallocated singl_function (elt_size=4) to 100 items from 50.
+Database file #1: renformer.bib
+-- IEEEtran.bst version 1.14 (2015/08/26) by Michael Shell.
+-- http://www.michaelshell.org/tex/ieeetran/bibtex/
+-- See the "IEEEtran_bst_HOWTO.pdf" manual for usage information.
+
+Done.
+You've used 22 entries,
+            4087 wiz_defined-function locations,
+            933 strings with 12540 characters,
+and the built_in function-call counts, 13242 in all, are:
+= -- 1027
+> -- 461
+< -- 20
++ -- 220
+- -- 110
+* -- 621
+:= -- 2076
+add.period$ -- 44
+call.type$ -- 22
+change.case$ -- 24
+chr.to.int$ -- 0
+cite$ -- 22
+duplicate$ -- 1101
+empty$ -- 1114
+format.name$ -- 131
+if$ -- 3064
+int.to.chr$ -- 0
+int.to.str$ -- 22
+missing$ -- 230
+newline$ -- 89
+num.names$ -- 22
+pop$ -- 597
+preamble$ -- 1
+purify$ -- 0
+quote$ -- 2
+skip$ -- 1047
+stack$ -- 0
+substring$ -- 110
+swap$ -- 744
+text.length$ -- 20
+text.prefix$ -- 0
+top$ -- 5
+type$ -- 22
+warning$ -- 0
+while$ -- 30
+width$ -- 24
+write$ -- 220
