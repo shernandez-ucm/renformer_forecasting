@@ -6,6 +6,8 @@ Evaluation:
   • REnFormer-Skip: all overlapping sliding-window predictions over the test set
   • TimesFM: non-overlapping 24 h windows over the test period (per-site univariate)
   • Active-mask metrics (MW > 0.1): MAE, RMSE, CRPS
+  • Efficiency: parameter count and pure inference time (JIT/compile warm-up
+    excluded), reported per model alongside ms per site-window forecast
 
 Usage
 -----
@@ -17,6 +19,7 @@ python compare_models_skip.py --csv <path> --skip_timesfm
 python compare_models_skip.py --csv <path> --skip_renformer
 """
 import argparse
+import time
 import warnings
 from pathlib import Path
 
@@ -51,6 +54,27 @@ HPARAMS = dict(
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Efficiency helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+def count_params(params) -> int:
+    """Total number of scalar parameters in a JAX/Flax pytree."""
+    return int(sum(x.size for x in jax.tree_util.tree_leaves(params)
+                   if hasattr(x, "size")))
+
+
+def count_timesfm_params(tfm):
+    """Parameter count of a TimesFM 2.5 flax model (None if introspection fails)."""
+    try:
+        from flax import nnx
+        state = nnx.state(tfm.model, nnx.Param)
+        return count_params(state)
+    except Exception as exc:                          # noqa: BLE001
+        print(f"  (could not count TimesFM params: {exc})")
+        return None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # REnFormer-Skip checkpoint evaluation
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -59,7 +83,10 @@ def collect_renformer_skip_predictions(test_norm, test_raw, checkpoint_dir, max_
     Load REnFormer-Skip from checkpoint and run all sliding-window predictions over
     the test set (same protocol as run_experiment_skip.py collect_predictions).
 
-    Returns (y_true_mw, y_pred_mw, y_sigma_mw) as flat 1-D arrays in MW units.
+    Returns (y_true_mw, y_pred_mw, y_sigma_mw, stats) where the first three are
+    flat 1-D arrays in MW units and stats is
+    {"params": int, "infer_s": float, "n_fc": int} — n_fc counts site-window
+    forecasts; infer_s covers only eval_step calls, JIT compilation excluded.
 
     The model is trained on raw-MW input (raw_input=True, instance norm handles
     per-window scale) and supervised against raw MW (train_target="raw"),
@@ -77,14 +104,25 @@ def collect_renformer_skip_predictions(test_norm, test_raw, checkpoint_dir, max_
     dummy_x     = jnp.zeros((1, LOOKBACK, in_feat))
     params_like = model.init(jax.random.PRNGKey(0), dummy_x, train=False)
     params      = load_checkpoint(params_like, checkpoint_dir)
+    n_params    = count_params(params)
 
     eval_step = make_eval_step(model)
     mu_list, sigma_list, y_raw_list = [], [], []
+    infer_s, n_fc, seen_shapes = 0.0, 0, set()
 
     n_nonoverlap = len(range(0, test_ds.n_windows, HORIZON))
     print(f"  REnFormer-Skip: evaluating {n_nonoverlap:,} non-overlapping windows …", flush=True)
+    print(f"  REnFormer-Skip: {n_params:,} parameters", flush=True)
     for x_b, _, y_raw_b, _, _ in test_ds.sequential_batches(512, stride=HORIZON):
-        mean, log_std = eval_step(params, jnp.array(x_b))
+        x_d = jnp.array(x_b)
+        if x_b.shape not in seen_shapes:              # untimed warm-up per batch shape
+            jax.block_until_ready(eval_step(params, x_d))
+            seen_shapes.add(x_b.shape)
+        t0 = time.perf_counter()
+        mean, log_std = eval_step(params, x_d)
+        jax.block_until_ready((mean, log_std))
+        infer_s += time.perf_counter() - t0
+        n_fc    += x_b.shape[0]
         mu_list.append(np.array(mean))
         sigma_list.append(np.array(jnp.exp(log_std)))
         y_raw_list.append(y_raw_b)
@@ -92,7 +130,8 @@ def collect_renformer_skip_predictions(test_norm, test_raw, checkpoint_dir, max_
     y_true  = np.concatenate(y_raw_list).reshape(-1)
     y_pred  = np.concatenate(mu_list).reshape(-1)
     y_sigma = np.concatenate(sigma_list).reshape(-1)
-    return y_true, y_pred, y_sigma
+    stats   = {"params": n_params, "infer_s": infer_s, "n_fc": n_fc}
+    return y_true, y_pred, y_sigma, stats
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -107,7 +146,12 @@ def run_timesfm_zero_shot(val_raw, test_raw, max_sites=None):
     val_raw is prepended so that early test windows (which need lookback before
     the test start date) have sufficient context.
 
-    Returns (y_true_mw, y_pred_mw, y_sigma_mw) as flat 1-D arrays in MW units.
+    Returns (y_true_mw, y_pred_mw, y_sigma_mw, stats) where the first three are
+    flat 1-D arrays in MW units and stats is
+    {"params": int | None, "infer_s": float, "n_fc": int} — n_fc counts
+    site-window forecasts; infer_s covers only tfm.forecast calls, with one
+    untimed warm-up call to exclude compilation.
+
     Sigma is estimated via OLS fit to the nine output quantiles (same approach
     as forecast_solar.py).
     """
@@ -146,7 +190,12 @@ def run_timesfm_zero_shot(val_raw, test_raw, max_sites=None):
     window_starts = list(range(LOOKBACK, n_test - HORIZON + 1, HORIZON))
     print(f"  TimesFM zero-shot: {n_sites} sites × {len(window_starts)} windows …", flush=True)
 
+    n_params = count_timesfm_params(tfm)
+    if n_params is not None:
+        print(f"  TimesFM: {n_params:,} parameters", flush=True)
+
     mu_list, sigma_list, y_raw_list = [], [], []
+    infer_s, n_fc, warmed = 0.0, 0, False
 
     for i, win_rel in enumerate(window_starts):
         ctx_end   = val_len + win_rel           # absolute index (end of context)
@@ -157,10 +206,17 @@ def run_timesfm_zero_shot(val_raw, test_raw, max_sites=None):
         ctx = ctx_arr[:, ctx_start:ctx_end]           # (S, LOOKBACK)
         tgt = ctx_arr[:, ctx_end:ctx_end + HORIZON]   # (S, HORIZON)
 
+        inputs = [ctx[s] for s in range(n_sites)]
+        if not warmed:                          # untimed warm-up: exclude compilation
+            tfm.forecast(horizon=HORIZON, inputs=inputs)
+            warmed = True
+        t0 = time.perf_counter()
         point_fc, quant_fc = tfm.forecast(
             horizon=HORIZON,
-            inputs=[ctx[s] for s in range(n_sites)],
+            inputs=inputs,
         )
+        infer_s += time.perf_counter() - t0
+        n_fc    += n_sites
         # point_fc: (S, HORIZON)  quant_fc: (S, HORIZON, 10)
 
         q_vals = quant_fc[:, :, 1:10]                         # (S, H, 9)
@@ -173,10 +229,12 @@ def run_timesfm_zero_shot(val_raw, test_raw, max_sites=None):
         if (i + 1) % 50 == 0:
             print(f"    … {i+1}/{len(window_starts)} windows done", flush=True)
 
+    stats = {"params": n_params, "infer_s": infer_s, "n_fc": n_fc}
     return (
         np.concatenate(y_raw_list),
         np.concatenate(mu_list),
         np.concatenate(sigma_list),
+        stats,
     )
 
 
@@ -197,6 +255,14 @@ def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray,
     return results
 
 
+def add_efficiency(metrics: dict, stats: dict) -> dict:
+    """Merge param count and inference-time stats into a metrics dict."""
+    metrics["Params"]      = stats["params"]
+    metrics["InferTime_s"] = stats["infer_s"]
+    metrics["ms_per_fc"]   = 1000.0 * stats["infer_s"] / max(stats["n_fc"], 1)
+    return metrics
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Print utilities
 # ──────────────────────────────────────────────────────────────────────────────
@@ -204,15 +270,20 @@ def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray,
 def print_table(results: dict, header: str = ""):
     if header:
         print(f"\n{header}")
-    row_fmt  = f"{'Method':<30} {'MAE':>10} {'RMSE':>10} {'CRPS':>12}"
+    row_fmt  = (f"{'Method':<30} {'MAE':>10} {'RMSE':>10} {'CRPS':>12} "
+                f"{'Params':>10} {'Time(s)':>10} {'ms/fc':>9}")
     sep      = "─" * len(row_fmt)
     print(row_fmt)
     print(sep)
     for name, m in results.items():
-        mae_s  = f"{m['MAE']:.4f}"  if "MAE"  in m else "    ——"
-        rmse_s = f"{m['RMSE']:.4f}" if "RMSE" in m else "    ——"
-        crps_s = f"{m['CRPS']:.4f}" if "CRPS" in m else "          ——"
-        print(f"{name:<30} {mae_s:>10} {rmse_s:>10} {crps_s:>12}")
+        mae_s  = f"{m['MAE']:.4f}"  if "MAE"  in m else "——"
+        rmse_s = f"{m['RMSE']:.4f}" if "RMSE" in m else "——"
+        crps_s = f"{m['CRPS']:.4f}" if "CRPS" in m else "——"
+        par_s  = f"{m['Params']/1e6:.2f}M"   if m.get("Params") is not None else "——"
+        tim_s  = f"{m['InferTime_s']:.2f}"   if "InferTime_s" in m else "——"
+        ms_s   = f"{m['ms_per_fc']:.2f}"     if "ms_per_fc"   in m else "——"
+        print(f"{name:<30} {mae_s:>10} {rmse_s:>10} {crps_s:>12} "
+              f"{par_s:>10} {tim_s:>10} {ms_s:>9}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -241,22 +312,24 @@ def run(args):
     if not args.skip_renformer:
         if checkpoint_exists(args.checkpoint_dir):
             print(f"\n─── REnFormer-Skip (checkpoint: {args.checkpoint_dir}) ───────────────────")
-            y_true, y_pred, y_sigma = collect_renformer_skip_predictions(
+            y_true, y_pred, y_sigma, stats = collect_renformer_skip_predictions(
                 test_norm, test_raw,
                 checkpoint_dir=args.checkpoint_dir,
                 max_sites=args.max_sites,
             )
-            results["REnFormer-Skip (checkpoint)"] = compute_metrics(y_true, y_pred, y_sigma)
+            results["REnFormer-Skip (checkpoint)"] = add_efficiency(
+                compute_metrics(y_true, y_pred, y_sigma), stats)
         else:
             print(f"\nNo REnFormer-Skip checkpoint found at '{args.checkpoint_dir}' — skipping.")
 
     # ── 3. TimesFM zero-shot ──────────────────────────────────────────────────
     if not args.skip_timesfm:
         print("\n─── TimesFM 2.5 (zero-shot) ─────────────────────────────────────────")
-        y_true, y_pred, y_sigma = run_timesfm_zero_shot(
+        y_true, y_pred, y_sigma, stats = run_timesfm_zero_shot(
             val_raw, test_raw, max_sites=args.max_sites
         )
-        results["TimesFM 2.5 (zero-shot)"] = compute_metrics(y_true, y_pred, y_sigma)
+        results["TimesFM 2.5 (zero-shot)"] = add_efficiency(
+            compute_metrics(y_true, y_pred, y_sigma), stats)
 
     # ── 4. Summary table ──────────────────────────────────────────────────────
     print_table(results, header="═" * 65 + "\nFINAL COMPARISON\n" + "═" * 65)

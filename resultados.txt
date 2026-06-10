@@ -11,129 +11,129 @@ Building site matrix …
 Dataset sizes  train=7,591,899  val=2,500,563  test=3,534,195
 
 --- REnFormer (masked Gaussian NLL) ---
-Epoch 001/50 | train NLL 1239105.5796 | val NLL 926872.5018
-Epoch 002/50 | train NLL 13007.9196 | val NLL 326862.9569
-Epoch 003/50 | train NLL 90569.3402 | val NLL 109702.1810
-Epoch 004/50 | train NLL 3475.8360 | val NLL 42814.6750
-Epoch 005/50 | train NLL 710.5826 | val NLL 9304.8926
-Epoch 006/50 | train NLL 1140.0907 | val NLL 1589.1925
-Epoch 007/50 | train NLL 2224.0039 | val NLL 518.8540
-Epoch 008/50 | train NLL 16.8847 | val NLL 61.0409
-Epoch 009/50 | train NLL 406.9877 | val NLL 15.4859
-Epoch 010/50 | train NLL 114.2667 | val NLL 18.5329
-Epoch 011/50 | train NLL 5.0042 | val NLL 5.9222
-Epoch 012/50 | train NLL 5.2530 | val NLL 8.8051
-Epoch 013/50 | train NLL 4.6436 | val NLL 8.1279
-Epoch 014/50 | train NLL 4.5332 | val NLL 4.0645
-Epoch 015/50 | train NLL 4.7784 | val NLL 7.0214
-Epoch 016/50 | train NLL 53.0023 | val NLL 4.0670
-Epoch 017/50 | train NLL 5.0164 | val NLL 3.8070
-Epoch 018/50 | train NLL 4.6231 | val NLL 3.8550
-Epoch 019/50 | train NLL 4.6397 | val NLL 4.1537
-Epoch 020/50 | train NLL 4.5578 | val NLL 6.6706
-Epoch 021/50 | train NLL 4.6511 | val NLL 3.7400
-Epoch 022/50 | train NLL 8.3076 | val NLL 4.9050
-Epoch 023/50 | train NLL 38.7033 | val NLL 3.8550
-Epoch 024/50 | train NLL 691.4803 | val NLL 3.8865
-Epoch 025/50 | train NLL 4.5424 | val NLL 3.9125
-Epoch 026/50 | train NLL 4.6622 | val NLL 3.9112
-Epoch 027/50 | train NLL 4.7160 | val NLL 3.8484
-Epoch 028/50 | train NLL 96.7537 | val NLL 3.9956
-Epoch 029/50 | train NLL 4.5230 | val NLL 3.8598
-Epoch 030/50 | train NLL 4.4272 | val NLL 3.7365
-Epoch 031/50 | train NLL 4.5947 | val NLL 4.2463
-Epoch 032/50 | train NLL 4.3333 | val NLL 3.9473
-Epoch 033/50 | train NLL 611.1217 | val NLL 3.8998
-Epoch 034/50 | train NLL 4.5310 | val NLL 3.7268
-Epoch 035/50 | train NLL 4.4405 | val NLL 3.9559
-Epoch 036/50 | train NLL 71.1075 | val NLL 3.9914
-Epoch 037/50 | train NLL 4.4093 | val NLL 4.0034
-Epoch 038/50 | train NLL 4.5392 | val NLL 4.6086
-Epoch 039/50 | train NLL 4.3950 | val NLL 4.2698
-Epoch 040/50 | train NLL 59.9553 | val NLL 4.1726
-Epoch 041/50 | train NLL 393.5367 | val NLL 4.1188
-Epoch 042/50 | train NLL 4.3514 | val NLL 4.0114
-Epoch 043/50 | train NLL 4.3470 | val NLL 4.0858
-Epoch 044/50 | train NLL 4.2905 | val NLL 3.9960
-Epoch 045/50 | train NLL 4.5329 | val NLL 4.0408
-Epoch 046/50 | train NLL 4.2780 | val NLL 4.0428
-Epoch 047/50 | train NLL 4.7477 | val NLL 4.1648
-Epoch 048/50 | train NLL 4.4426 | val NLL 4.1521
-Epoch 049/50 | train NLL 4.3536 | val NLL 4.1665
-Epoch 050/50 | train NLL 4.2844 | val NLL 4.1598
+Epoch 001/50 | train NLL 15775925.5970 | val NLL 18182215.1503
+Epoch 002/50 | train NLL 168701.6638 | val NLL 12557179.2069
+Epoch 003/50 | train NLL 5641380.5687 | val NLL 7743622.6807
+Epoch 004/50 | train NLL 151232.9158 | val NLL 4523568.4675
+Epoch 005/50 | train NLL 61468.1763 | val NLL 4410494.7590
+Epoch 006/50 | train NLL 309221.2411 | val NLL 4390501.5229
+Epoch 007/50 | train NLL 2035794.5816 | val NLL 453246.9329
+Epoch 008/50 | train NLL 920.4027 | val NLL 3276.1611
+Epoch 009/50 | train NLL 69.4279 | val NLL 937.1221
+Epoch 010/50 | train NLL 74.7806 | val NLL 190.7984
+Epoch 011/50 | train NLL 12.2463 | val NLL 141.7855
+Epoch 012/50 | train NLL 9.5442 | val NLL 143.6003
+Epoch 013/50 | train NLL 1.6290 | val NLL 149.2851
+Epoch 014/50 | train NLL 1.3922 | val NLL 162.5296
+Epoch 015/50 | train NLL 1.5820 | val NLL 109.6263
+Epoch 016/50 | train NLL 32.8968 | val NLL 172.6308
+Epoch 017/50 | train NLL 3.8518 | val NLL 125.4506
+Epoch 018/50 | train NLL 1.2695 | val NLL 130.9297
+Epoch 019/50 | train NLL 10.8328 | val NLL 103.6500
+Epoch 020/50 | train NLL 6.0622 | val NLL 104.9380
+Epoch 021/50 | train NLL 1.2510 | val NLL 168.4496
+Epoch 022/50 | train NLL 1.2455 | val NLL 129.7023
+Epoch 023/50 | train NLL 17.7016 | val NLL 144.2749
+Epoch 024/50 | train NLL 12.4829 | val NLL 146.4716
+Epoch 025/50 | train NLL 1.2455 | val NLL 153.7367
+Epoch 026/50 | train NLL 1.2272 | val NLL 118.6902
+Epoch 027/50 | train NLL 3.9166 | val NLL 158.4648
+Epoch 028/50 | train NLL 34.7046 | val NLL 127.2602
+Epoch 029/50 | train NLL 1.2179 | val NLL 121.0477
+Epoch 030/50 | train NLL 1.2585 | val NLL 198.9616
+Epoch 031/50 | train NLL 1.1897 | val NLL 190.4081
+Epoch 032/50 | train NLL 6.3112 | val NLL 163.2436
+Epoch 033/50 | train NLL 59.9351 | val NLL 173.3003
+Epoch 034/50 | train NLL 3.8621 | val NLL 166.3506
+Epoch 035/50 | train NLL 1.1998 | val NLL 157.0677
+Epoch 036/50 | train NLL 31.3829 | val NLL 184.7989
+Epoch 037/50 | train NLL 3.8105 | val NLL 185.0911
+Epoch 038/50 | train NLL 1.9838 | val NLL 231.1016
+Epoch 039/50 | train NLL 1.1978 | val NLL 199.7423
+Epoch 040/50 | train NLL 27.4712 | val NLL 185.4905
+Epoch 041/50 | train NLL 6.4563 | val NLL 204.9111
+Epoch 042/50 | train NLL 1.3583 | val NLL 196.6813
+Epoch 043/50 | train NLL 2.1399 | val NLL 199.8867
+Epoch 044/50 | train NLL 2.0150 | val NLL 215.4089
+Epoch 045/50 | train NLL 1.1721 | val NLL 211.8632
+Epoch 046/50 | train NLL 2.5927 | val NLL 209.4120
+Epoch 047/50 | train NLL 1.2615 | val NLL 219.7208
+Epoch 048/50 | train NLL 2.6335 | val NLL 219.5635
+Epoch 049/50 | train NLL 1.8935 | val NLL 217.4354
+Epoch 050/50 | train NLL 1.1760 | val NLL 217.3034
 Checkpoint saved → checkpoint/
 
 --- Test-set evaluation ---
 Method                         MAE     RMSE     CRPS
 ----------------------------------------------------
-REnFormer (test)           40.5121  60.8225  26.6349
+REnFormer (test)            1.8464   6.1741   1.3218
 
 --- Last 168-hour window → 24-hour forecast ---
 Method                         MAE     RMSE     CRPS
 ----------------------------------------------------
-REnFormer (last window)    27.0855  44.5760  19.2933
+REnFormer (last window)     3.3131   9.0442   2.3878
 
 Dataset sizes  train=7,591,899  val=2,500,563  test=3,534,195
 
 --- REnFormer-Skip (masked Gaussian NLL) ---
-Epoch 001/50 | train NLL 364274.8763 | val NLL 435416.9058
-Epoch 002/50 | train NLL 10289.5513 | val NLL 69134.2348
-Epoch 003/50 | train NLL 13418.6650 | val NLL 30914.8456
-Epoch 004/50 | train NLL 642.9837 | val NLL 3557.5284
-Epoch 005/50 | train NLL 1179.2671 | val NLL 6464.9164
-Epoch 006/50 | train NLL 115.8278 | val NLL 210.1032
-Epoch 007/50 | train NLL 1584.0406 | val NLL 47.1401
-Epoch 008/50 | train NLL 5.8117 | val NLL 20.7494
-Epoch 009/50 | train NLL 1721.6543 | val NLL 25.4594
-Epoch 010/50 | train NLL 741.0342 | val NLL 22.8794
-Epoch 011/50 | train NLL 4.6206 | val NLL 28.2595
-Epoch 012/50 | train NLL 4.6210 | val NLL 18.7182
-Epoch 013/50 | train NLL 4.6866 | val NLL 15.6457
-Epoch 014/50 | train NLL 4.6279 | val NLL 26.3266
-Epoch 015/50 | train NLL 4.7652 | val NLL 16.2873
-Epoch 016/50 | train NLL 1392.8176 | val NLL 15.9739
-Epoch 017/50 | train NLL 5.4135 | val NLL 10.3992
-Epoch 018/50 | train NLL 4.5565 | val NLL 13.6972
-Epoch 019/50 | train NLL 4.7120 | val NLL 14.4902
-Epoch 020/50 | train NLL 4.5331 | val NLL 11.9763
-Epoch 021/50 | train NLL 8.3658 | val NLL 12.0952
-Epoch 022/50 | train NLL 648.3074 | val NLL 12.6089
-Epoch 023/50 | train NLL 302.6683 | val NLL 11.0390
-Epoch 024/50 | train NLL 727.3487 | val NLL 10.6415
-Epoch 025/50 | train NLL 4.5544 | val NLL 13.8864
-Epoch 026/50 | train NLL 11.2001 | val NLL 10.2223
-Epoch 027/50 | train NLL 6.3211 | val NLL 10.7801
-Epoch 028/50 | train NLL 404.3331 | val NLL 11.9844
-Epoch 029/50 | train NLL 4.5188 | val NLL 13.0901
-Epoch 030/50 | train NLL 106.9442 | val NLL 11.5282
-Epoch 031/50 | train NLL 5.7647 | val NLL 11.3727
-Epoch 032/50 | train NLL 4.9692 | val NLL 11.7787
-Epoch 033/50 | train NLL 125.0775 | val NLL 9.7586
-Epoch 034/50 | train NLL 5.1720 | val NLL 10.1611
-Epoch 035/50 | train NLL 4.4441 | val NLL 10.5282
-Epoch 036/50 | train NLL 37.9137 | val NLL 10.5410
-Epoch 037/50 | train NLL 4.4290 | val NLL 9.7612
-Epoch 038/50 | train NLL 4.4094 | val NLL 11.2504
-Epoch 039/50 | train NLL 15.9052 | val NLL 11.2183
-Epoch 040/50 | train NLL 43.7535 | val NLL 10.3862
-Epoch 041/50 | train NLL 57.3457 | val NLL 10.7405
-Epoch 042/50 | train NLL 4.3930 | val NLL 10.9162
-Epoch 043/50 | train NLL 4.4644 | val NLL 10.8251
-Epoch 044/50 | train NLL 4.4249 | val NLL 10.4939
-Epoch 045/50 | train NLL 4.5892 | val NLL 10.6975
-Epoch 046/50 | train NLL 4.3565 | val NLL 10.3134
-Epoch 047/50 | train NLL 4.4605 | val NLL 10.4446
-Epoch 048/50 | train NLL 4.5016 | val NLL 10.4759
-Epoch 049/50 | train NLL 4.4871 | val NLL 10.4653
-Epoch 050/50 | train NLL 4.3708 | val NLL 10.4638
+Epoch 001/50 | train NLL 14283841.7583 | val NLL 11186739.1979
+Epoch 002/50 | train NLL 138835.9718 | val NLL 5322768.4906
+Epoch 003/50 | train NLL 1247727.2714 | val NLL 248427.5572
+Epoch 004/50 | train NLL 5217.3309 | val NLL 25416.3932
+Epoch 005/50 | train NLL 458.5205 | val NLL 13914.8170
+Epoch 006/50 | train NLL 527.9293 | val NLL 1475.8346
+Epoch 007/50 | train NLL 579.6982 | val NLL 592.2469
+Epoch 008/50 | train NLL 6.9284 | val NLL 200.0914
+Epoch 009/50 | train NLL 51.6931 | val NLL 138.5536
+Epoch 010/50 | train NLL 48.3348 | val NLL 109.2179
+Epoch 011/50 | train NLL 13.7207 | val NLL 104.5889
+Epoch 012/50 | train NLL 23.2664 | val NLL 106.0571
+Epoch 013/50 | train NLL 1.5060 | val NLL 108.7424
+Epoch 014/50 | train NLL 1.3767 | val NLL 96.1966
+Epoch 015/50 | train NLL 1.5284 | val NLL 89.7594
+Epoch 016/50 | train NLL 43.6203 | val NLL 114.9712
+Epoch 017/50 | train NLL 4.2253 | val NLL 98.7172
+Epoch 018/50 | train NLL 1.2734 | val NLL 92.4279
+Epoch 019/50 | train NLL 10.1860 | val NLL 87.8229
+Epoch 020/50 | train NLL 4.6223 | val NLL 84.5184
+Epoch 021/50 | train NLL 1.8883 | val NLL 114.0294
+Epoch 022/50 | train NLL 2.2550 | val NLL 110.0139
+Epoch 023/50 | train NLL 18.6235 | val NLL 124.0379
+Epoch 024/50 | train NLL 11.4417 | val NLL 114.9557
+Epoch 025/50 | train NLL 1.2812 | val NLL 130.2403
+Epoch 026/50 | train NLL 1.2371 | val NLL 97.9513
+Epoch 027/50 | train NLL 2.2724 | val NLL 120.6854
+Epoch 028/50 | train NLL 45.5720 | val NLL 110.3946
+Epoch 029/50 | train NLL 1.2129 | val NLL 109.7129
+Epoch 030/50 | train NLL 31.5011 | val NLL 126.6339
+Epoch 031/50 | train NLL 1.2035 | val NLL 152.1904
+Epoch 032/50 | train NLL 4.5802 | val NLL 113.7890
+Epoch 033/50 | train NLL 35.5320 | val NLL 133.4952
+Epoch 034/50 | train NLL 3.3409 | val NLL 146.9871
+Epoch 035/50 | train NLL 1.2085 | val NLL 133.8933
+Epoch 036/50 | train NLL 20.4310 | val NLL 144.8233
+Epoch 037/50 | train NLL 4.4866 | val NLL 146.4477
+Epoch 038/50 | train NLL 2.0688 | val NLL 166.9294
+Epoch 039/50 | train NLL 5.1869 | val NLL 156.6438
+Epoch 040/50 | train NLL 30.1052 | val NLL 150.4147
+Epoch 041/50 | train NLL 10.0912 | val NLL 158.8553
+Epoch 042/50 | train NLL 2.0766 | val NLL 161.8545
+Epoch 043/50 | train NLL 2.2944 | val NLL 162.2959
+Epoch 044/50 | train NLL 1.5801 | val NLL 173.5744
+Epoch 045/50 | train NLL 1.1810 | val NLL 169.7823
+Epoch 046/50 | train NLL 2.5183 | val NLL 168.8104
+Epoch 047/50 | train NLL 1.3076 | val NLL 175.3591
+Epoch 048/50 | train NLL 3.2167 | val NLL 174.3054
+Epoch 049/50 | train NLL 1.5669 | val NLL 172.4921
+Epoch 050/50 | train NLL 1.1734 | val NLL 172.5812
 Checkpoint saved → checkpoint_skip/
 
 --- Test-set evaluation ---
 Method                         MAE     RMSE     CRPS
 ----------------------------------------------------
-REnFormer-Skip (test)      34.0886  49.9447  23.8987
+REnFormer-Skip (test)       1.8508   6.1749   1.3233
 
 --- Last 168-hour window → 24-hour forecast ---
 Method                         MAE     RMSE     CRPS
 ----------------------------------------------------
-REnFormer-Skip (last window)  23.1449  36.7788  17.0269
+REnFormer-Skip (last window)   3.0899   8.1277   2.1354

@@ -6,6 +6,8 @@ Evaluation:
   • REnFormer: all overlapping sliding-window predictions over the test set
   • TimesFM: non-overlapping 24 h windows over the test period (per-site univariate)
   • Active-mask metrics (MW > 0.1): MAE, RMSE, CRPS
+  • Efficiency: parameter count and pure inference time (JIT/compile warm-up
+    excluded), reported per model alongside ms per site-window forecast
 
 Usage
 -----
@@ -17,6 +19,7 @@ python compare_models.py --csv <path> --skip_timesfm
 python compare_models.py --csv <path> --skip_renformer
 """
 import argparse
+import time
 import warnings
 from pathlib import Path
 
@@ -24,8 +27,15 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from compare_models_skip import collect_renformer_skip_predictions
-from renformer.model import TimeSeriesTransformer,TimeSeriesTransformerSkip
+from compare_models_skip import (
+    add_efficiency,
+    collect_renformer_skip_predictions,
+    compute_metrics,
+    count_params,
+    print_table,
+    run_timesfm_zero_shot,
+)
+from renformer.model import TimeSeriesTransformer
 from renformer.train import SENDataset, make_eval_step, load_checkpoint, checkpoint_exists
 from renformer.sen_data import (
     prepare_sen_dataset,
@@ -33,7 +43,6 @@ from renformer.sen_data import (
     prepared_dataset_exists,
     save_prepared_dataset,
 )
-from renformer.metrics import EPSILON_MW, mae, rmse, crps_gaussian
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -60,7 +69,10 @@ def collect_renformer_predictions(test_norm, test_raw, checkpoint_dir, max_sites
     Load REnFormer from checkpoint and run all sliding-window predictions over
     the test set (same protocol as run_experiment.py collect_predictions).
 
-    Returns (y_true_mw, y_pred_mw, y_sigma_mw) as flat 1-D arrays in MW units.
+    Returns (y_true_mw, y_pred_mw, y_sigma_mw, stats) where the first three are
+    flat 1-D arrays in MW units and stats is
+    {"params": int, "infer_s": float, "n_fc": int} — n_fc counts site-window
+    forecasts; infer_s covers only eval_step calls, JIT compilation excluded.
 
     The model is trained on raw-MW input (raw_input=True, RevIN handles
     per-window scale) and supervised against raw MW (train_target="raw"),
@@ -78,14 +90,25 @@ def collect_renformer_predictions(test_norm, test_raw, checkpoint_dir, max_sites
     dummy_x     = jnp.zeros((1, LOOKBACK, in_feat))
     params_like = model.init(jax.random.PRNGKey(0), dummy_x, train=False)
     params      = load_checkpoint(params_like, checkpoint_dir)
+    n_params    = count_params(params)
 
     eval_step = make_eval_step(model)
     mu_list, sigma_list, y_raw_list = [], [], []
+    infer_s, n_fc, seen_shapes = 0.0, 0, set()
 
     n_nonoverlap = len(range(0, test_ds.n_windows, HORIZON))
     print(f"  REnFormer: evaluating {n_nonoverlap:,} non-overlapping windows …", flush=True)
+    print(f"  REnFormer: {n_params:,} parameters", flush=True)
     for x_b, _, y_raw_b, _, _ in test_ds.sequential_batches(512, stride=HORIZON):
-        mean, log_std = eval_step(params, jnp.array(x_b))
+        x_d = jnp.array(x_b)
+        if x_b.shape not in seen_shapes:              # untimed warm-up per batch shape
+            jax.block_until_ready(eval_step(params, x_d))
+            seen_shapes.add(x_b.shape)
+        t0 = time.perf_counter()
+        mean, log_std = eval_step(params, x_d)
+        jax.block_until_ready((mean, log_std))
+        infer_s += time.perf_counter() - t0
+        n_fc    += x_b.shape[0]
         mu_list.append(np.array(mean))
         sigma_list.append(np.array(jnp.exp(log_std)))
         y_raw_list.append(y_raw_b)
@@ -93,165 +116,12 @@ def collect_renformer_predictions(test_norm, test_raw, checkpoint_dir, max_sites
     y_true  = np.concatenate(y_raw_list).reshape(-1)
     y_pred  = np.concatenate(mu_list).reshape(-1)
     y_sigma = np.concatenate(sigma_list).reshape(-1)
-    return y_true, y_pred, y_sigma
+    stats   = {"params": n_params, "infer_s": infer_s, "n_fc": n_fc}
+    return y_true, y_pred, y_sigma, stats
 
-def collect_renformer_skip_predictions(test_norm, test_raw, checkpoint_dir, max_sites=None):
-    """
-    Load REnFormer-Skip from checkpoint and run all sliding-window predictions over
-    the test set (same protocol as run_experiment_skip.py collect_predictions).
-
-    Returns (y_true_mw, y_pred_mw, y_sigma_mw) as flat 1-D arrays in MW units.
-
-    The model is trained with train_target="raw" (supervised against raw MW),
-    so its mean/log_std outputs are already in MW — no de-normalization needed.
-    """
-    if max_sites is not None:
-        cols      = test_norm.columns[:max_sites]
-        test_norm = test_norm[cols]
-        test_raw  = test_raw[cols]
-
-    model   = TimeSeriesTransformerSkip(**HPARAMS)
-    test_ds = SENDataset(test_norm, test_raw, LOOKBACK, HORIZON)
-
-    in_feat     = getattr(model, "in_features", model.out_features)
-    dummy_x     = jnp.zeros((1, LOOKBACK, in_feat))
-    params_like = model.init(jax.random.PRNGKey(0), dummy_x, train=False)
-    params      = load_checkpoint(params_like, checkpoint_dir)
-
-    eval_step = make_eval_step(model)
-    mu_list, sigma_list, y_raw_list = [], [], []
-
-    n_nonoverlap = len(range(0, test_ds.n_windows, HORIZON))
-    print(f"  REnFormer-Skip: evaluating {n_nonoverlap:,} non-overlapping windows …", flush=True)
-    for x_b, _, y_raw_b, _, _ in test_ds.sequential_batches(512, stride=HORIZON):
-        mean, log_std = eval_step(params, jnp.array(x_b))
-        mu_list.append(np.array(mean))
-        sigma_list.append(np.array(jnp.exp(log_std)))
-        y_raw_list.append(y_raw_b)
-
-    y_true  = np.concatenate(y_raw_list).reshape(-1)
-    y_pred  = np.concatenate(mu_list).reshape(-1)
-    y_sigma = np.concatenate(sigma_list).reshape(-1)
-    return y_true, y_pred, y_sigma
-
-# ──────────────────────────────────────────────────────────────────────────────
-# TimesFM zero-shot evaluation
-# ──────────────────────────────────────────────────────────────────────────────
-
-def run_timesfm_zero_shot(val_raw, test_raw, max_sites=None):
-    """
-    Evaluate TimesFM 2.5 (Flax, zero-shot) on non-overlapping 24h test windows,
-    forecasting each site as an independent univariate series.
-
-    val_raw is prepended so that early test windows (which need lookback before
-    the test start date) have sufficient context.
-
-    Returns (y_true_mw, y_pred_mw, y_sigma_mw) as flat 1-D arrays in MW units.
-    Sigma is estimated via OLS fit to the nine output quantiles (same approach
-    as forecast_solar.py).
-    """
-    import timesfm
-
-    if max_sites is not None:
-        cols     = test_raw.columns[:max_sites]
-        val_raw  = val_raw[cols]
-        test_raw = test_raw[cols]
-
-    n_sites = test_raw.shape[1]
-    val_len = len(val_raw)
-
-    # (S, T_val + T_test) — row per site, column per hour
-    ctx_arr = np.concatenate([val_raw.values, test_raw.values], axis=0).T.astype(np.float32)
-
-    tfm = timesfm.TimesFM_2p5_200M_flax.from_pretrained("google/timesfm-2.5-200m-flax")
-    tfm.compile(timesfm.ForecastConfig(
-        max_context=LOOKBACK,
-        max_horizon=HORIZON,
-        normalize_inputs=True,
-        use_continuous_quantile_head=True,
-        force_flip_invariance=True,
-        infer_is_positive=True,
-        fix_quantile_crossing=True,
-    ))
-
-    # Φ⁻¹(level) for levels 0.1…0.9 — used to estimate Gaussian sigma via OLS
-    z_inv = np.array([-1.2815516, -0.8416212, -0.5244005, -0.2533471, 0.0,
-                       0.2533471,  0.5244005,  0.8416212,  1.2815516])
-
-    n_test        = len(test_raw)
-    # Start at LOOKBACK so the first TimesFM target window aligns with REnFormer's
-    # first target window (test[LOOKBACK:LOOKBACK+HORIZON]).  Windows before
-    # LOOKBACK cannot be matched by REnFormer anyway (needs full test context).
-    window_starts = list(range(LOOKBACK, n_test - HORIZON + 1, HORIZON))
-    print(f"  TimesFM zero-shot: {n_sites} sites × {len(window_starts)} windows …", flush=True)
-
-    mu_list, sigma_list, y_raw_list = [], [], []
-
-    for i, win_rel in enumerate(window_starts):
-        ctx_end   = val_len + win_rel           # absolute index (end of context)
-        ctx_start = ctx_end - LOOKBACK
-        if ctx_start < 0:
-            continue                            # not enough history; skip
-
-        ctx = ctx_arr[:, ctx_start:ctx_end]           # (S, LOOKBACK)
-        tgt = ctx_arr[:, ctx_end:ctx_end + HORIZON]   # (S, HORIZON)
-
-        point_fc, quant_fc = tfm.forecast(
-            horizon=HORIZON,
-            inputs=[ctx[s] for s in range(n_sites)],
-        )
-        # point_fc: (S, HORIZON)  quant_fc: (S, HORIZON, 10)
-
-        q_vals = quant_fc[:, :, 1:10]                         # (S, H, 9)
-        sigma  = np.abs((q_vals @ z_inv) / (z_inv @ z_inv))  # (S, H)
-
-        mu_list.append(point_fc[:, :HORIZON].reshape(-1))
-        sigma_list.append(sigma.reshape(-1))
-        y_raw_list.append(tgt.reshape(-1))
-
-        if (i + 1) % 50 == 0:
-            print(f"    … {i+1}/{len(window_starts)} windows done", flush=True)
-
-    return (
-        np.concatenate(y_raw_list),
-        np.concatenate(mu_list),
-        np.concatenate(sigma_list),
-    )
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Evaluation helpers
-# ──────────────────────────────────────────────────────────────────────────────
-
-def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray,
-                    y_sigma: np.ndarray = None) -> dict:
-    """MAE, RMSE (and CRPS if sigma is provided), active-mask applied."""
-    mask = (y_true > EPSILON_MW)
-    results = {
-        "MAE" : mae(y_true, y_pred, mask),
-        "RMSE": rmse(y_true, y_pred, mask),
-    }
-    if y_sigma is not None:
-        results["CRPS"] = crps_gaussian(y_true, y_pred, y_sigma, mask)
-    return results
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Print utilities
-# ──────────────────────────────────────────────────────────────────────────────
-
-def print_table(results: dict, header: str = ""):
-    if header:
-        print(f"\n{header}")
-    row_fmt  = f"{'Method':<30} {'MAE':>10} {'RMSE':>10} {'CRPS':>12}"
-    sep      = "─" * len(row_fmt)
-    print(row_fmt)
-    print(sep)
-    for name, m in results.items():
-        mae_s  = f"{m['MAE']:.4f}"  if "MAE"  in m else "    ——"
-        rmse_s = f"{m['RMSE']:.4f}" if "RMSE" in m else "    ——"
-        crps_s = f"{m['CRPS']:.4f}" if "CRPS" in m else "          ——"
-        print(f"{name:<30} {mae_s:>10} {rmse_s:>10} {crps_s:>12}")
+# TimesFM zero-shot evaluation, metrics, and table printing are shared with
+# compare_models_skip.py (run_timesfm_zero_shot, compute_metrics,
+# add_efficiency, print_table — imported above).
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -280,33 +150,36 @@ def run(args):
     if not args.skip_renformer:
         if checkpoint_exists(args.checkpoint_dir):
             print(f"\n─── REnFormer (checkpoint: {args.checkpoint_dir}) ───────────────────")
-            y_true, y_pred, y_sigma = collect_renformer_predictions(
+            y_true, y_pred, y_sigma, stats = collect_renformer_predictions(
                 test_norm, test_raw,
                 checkpoint_dir=args.checkpoint_dir,
                 max_sites=args.max_sites,
             )
-            results["REnFormer (checkpoint)"] = compute_metrics(y_true, y_pred, y_sigma)
+            results["REnFormer (checkpoint)"] = add_efficiency(
+                compute_metrics(y_true, y_pred, y_sigma), stats)
         else:
             print(f"\nNo REnFormer checkpoint found at '{args.checkpoint_dir}' — skipping.")
 
     # ── 3. TimesFM zero-shot ──────────────────────────────────────────────────
     if not args.skip_timesfm:
         print("\n─── TimesFM 2.5 (zero-shot) ─────────────────────────────────────────")
-        y_true, y_pred, y_sigma = run_timesfm_zero_shot(
+        y_true, y_pred, y_sigma, stats = run_timesfm_zero_shot(
             val_raw, test_raw, max_sites=args.max_sites
         )
-        results["TimesFM 2.5 (zero-shot)"] = compute_metrics(y_true, y_pred, y_sigma)
+        results["TimesFM 2.5 (zero-shot)"] = add_efficiency(
+            compute_metrics(y_true, y_pred, y_sigma), stats)
 
     # ── 2. REnFormer-Skip from checkpoint ─────────────────────────────────────
     if not args.skip_renformer:
         if checkpoint_exists(args.checkpoint_dir):
             print(f"\n─── REnFormer-Skip (checkpoint: {args.checkpoint_dir}) ───────────────────")
-            y_true, y_pred, y_sigma = collect_renformer_skip_predictions(
+            y_true, y_pred, y_sigma, stats = collect_renformer_skip_predictions(
                 test_norm, test_raw,
                 checkpoint_dir=args.checkpoint_dir,
                 max_sites=args.max_sites,
             )
-            results["REnFormer-Skip (checkpoint)"] = compute_metrics(y_true, y_pred, y_sigma)
+            results["REnFormer-Skip (checkpoint)"] = add_efficiency(
+                compute_metrics(y_true, y_pred, y_sigma), stats)
         else:
             print(f"\nNo REnFormer-Skip checkpoint found at '{args.checkpoint_dir}' — skipping.")
 

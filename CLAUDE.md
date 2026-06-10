@@ -16,7 +16,9 @@ Python 3.12 with a local virtualenv at `env/`. Activate before running anything:
 source env/bin/activate
 ```
 
-Key dependencies: `jax==0.10.1`, `jaxlib==0.10.1` (CUDA 12), `flax==0.12.7`, `optax==0.2.8`, `numpy`, `pandas`, `scipy`, `timesfm`, `neuralforecast`, `orbax-checkpoint`.
+Key dependencies: `jax==0.10.1`, `jaxlib==0.10.1` (CUDA 12), `flax==0.12.7`, `optax==0.2.8`, `numpy`, `pandas`, `scipy`, `timesfm`, `orbax-checkpoint`.
+
+There is no test suite, linter config, or packaging — scripts are run directly from the repo root. `python synthetic_data.py` is the quick sanity check.
 
 ## Running the Code
 
@@ -26,11 +28,11 @@ The main SEN data file is `data/data.csv`. A pre-built parquet cache lives in `d
 ```bash
 python run_experiment.py --csv data/data.csv
 python run_experiment.py --csv data/data.csv --cache_dir data/  # use parquet cache, skip CSV parse
-python run_experiment.py --csv <path> --skip_baselines          # faster, skips MLP/LSTM
-python run_experiment.py --csv <path> --ablation                # also trains MSE variant
 python run_experiment.py --csv <path> --resume                  # skip training, load checkpoint
 ```
-Checkpoints are saved to `checkpoints/` by default (override with `--checkpoint_dir`).
+Checkpoints are saved to `checkpoints/` by default (override with `--checkpoint_dir`). The `--ablation` flag is declared but currently a no-op (never read by `run()`).
+
+**Checkpoint directory naming is inconsistent across scripts** — note plural vs singular: the training scripts default to `checkpoints/` / `checkpoints_skip/`, but `compare_models_skip.py` defaults to `checkpoint_skip` and the trained checkpoints in this working copy live in `checkpoint/` (gitignored) and `checkpoint_skip/`. Pass `--checkpoint_dir` explicitly to be safe.
 
 **REnFormer-Skip experiment** (macro skip-connection variant):
 ```bash
@@ -47,15 +49,23 @@ python forecast_checkpoint.py \
     --checkpoint checkpoints/renformer_params.pkl \
     --out  forecasts/renformer_forecast.csv
 ```
-Outputs columns `timestamp, site, mean_mw, std_mw, q10_mw, q90_mw` plus a `__total__` aggregate row per hour.
+Outputs columns `timestamp, site, mean_mw, std_mw, q10_mw, q90_mw` plus a `__total__` aggregate row per hour. **Caveat:** this script loads params with `pickle.load` (default `checkpoints/renformer_params.pkl`), but the training pipeline saves Orbax checkpoints and nothing in the repo writes that pickle — the params must be exported to a pickle separately before this script works.
 
-**NeuralForecast comparison** (TSMixer, DeepAR, TFT, Autoformer vs REnFormer):
+**REnFormer + REnFormer-Skip vs TimesFM 2.5 zero-shot comparison** (loads existing checkpoints, no retraining):
 ```bash
 python compare_models.py --csv <path>
-python compare_models.py --csv <path> --models deepar tft       # subset of models
-python compare_models.py --csv <path> --zero_shot               # no SEN training
-python compare_models.py --csv <path> --max_sites 50            # limit sites for speed
-python compare_models.py --cache_dir data/cache/ --csv <path>   # reuse parquet cache
+python compare_models.py --csv <path> --cache_dir data/          # reuse parquet cache
+python compare_models.py --csv <path> --checkpoint_dir checkpoint
+python compare_models.py --csv <path> --max_sites 50             # limit sites for speed
+python compare_models.py --csv <path> --skip_timesfm             # REnFormer variants only
+python compare_models.py --csv <path> --skip_renformer           # TimesFM only
+python compare_models.py --csv <path> --out results.json         # save metrics as JSON
+```
+Note: it restores **both** the base and Skip models from the same `--checkpoint_dir` (default `checkpoints`).
+
+**Neural baselines vs REnFormer checkpoint** (Persistence, per-site MLP, per-site LSTM from `renformer/baselines.py`):
+```bash
+python baseline_models.py --csv <path> [--cache_dir data/] [--max_sites N]
 ```
 
 **REnFormer-Skip vs TimesFM comparison** (loads existing checkpoint, no retraining):
@@ -104,13 +114,13 @@ renformer/
 run_experiment.py      — end-to-end paper reproduction script; checkpoints to checkpoints/
 run_experiment_skip.py — REnFormer-Skip variant (macro encoder skip-connection); checkpoints to checkpoints_skip/
 forecast_checkpoint.py — load saved params and produce per-site probabilistic forecast CSV
-compare_models.py      — NeuralForecast benchmark (TSMixer, DeepAR, TFT, Autoformer)
+compare_models.py      — REnFormer + REnFormer-Skip (from checkpoint) vs TimesFM 2.5 zero-shot; imports from compare_models_skip.py
 compare_models_skip.py — REnFormer-Skip vs TimesFM 2.5 comparison (loads from checkpoint_skip by default)
 forecast_example.py    — TimesFM 2.5 zero-shot all-generation forecast
 forecast_solar.py      — TimesFM 2.5 zero-shot solar-only forecast
 finetune_solar.py      — TimesFM 2.5 fine-tuning (PyTorch) on solar data
 synthetic_data.py      — generates random (X, Y) tensors and runs a short training loop; validates the stack without real data
-baseline_models.py     — pandas/numpy statistical baselines (arithmetic mean, rolling mean, seasonal naive); single-site, operates on DataFrames; separate from renformer/baselines.py which implements JAX/Flax Persistence/MLP/LSTM for multi-site SEN evaluation
+baseline_models.py     — section 1: pandas/numpy statistical baselines (arithmetic mean, rolling mean, seasonal naive; single-site, DataFrame-level); section 2 (runnable as a script): JAX/Flax Persistence/MLP/LSTM from renformer/baselines.py compared against a saved REnFormer checkpoint
 paper/                 — LaTeX source (renformer_paper.tex) and bibliography (renformer.bib)
 ```
 
