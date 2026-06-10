@@ -26,7 +26,7 @@ CSV="${CSV:-data/data.csv}"
 CACHE_DIR="${CACHE_DIR:-data/}"
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-checkpoint_skip}"
 OUT_DIR="${OUT_DIR:-results_scaling}"
-STEP="${STEP:-10}"
+STEP="${STEP:-50}"
 MIN_SITES="${MIN_SITES:-10}"
 MAX_SITES="${MAX_SITES:-291}"
 
