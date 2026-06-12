@@ -153,3 +153,4 @@ cython_debug/
 /data
 /checkpoint
 /lightning_logs
+/checkpoint_skip
