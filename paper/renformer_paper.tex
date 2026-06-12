@@ -424,6 +424,19 @@ respectively. The test period is strictly future relative to training,
 so newer plants and fleet growth are part of the evaluation, matching
 deployment conditions.
 
+\begin{figure}[h]
+\caption{Highest and lowest generation sites in the test set, by season.}
+\centering
+\includegraphics[width=0.5\textwidth]{../figures/solar_24h_sites_seasons.pdf}
+\includegraphics[width=0.5\textwidth]{../figures/solar_24h_sites_seasons_lowest.pdf}
+\end{figure}
+
+\begin{figure*}[t!]
+\caption{Solar fleet generation heatmap by month and hour.}
+\centering
+\includegraphics[width=\textwidth]{../figures/09_solar_heatmap_month_hour.pdf}
+\end{figure*}
+
 \subsection{Comparison Protocol}
 
 The central comparison is REnFormer-Skip against
@@ -589,7 +602,11 @@ exploit the resemblance between recent days and the next day. This is the varian
   \end{tabular}
 \end{table}
 
-
+\begin{figure}[h]
+\caption{Last-window 24 h forecast for one site from three models.}
+\centering
+\includegraphics[width=0.5\textwidth]{../figures/last_window_forecast.pdf}
+\end{figure}
 
 % -----------------------------------------------------------------------
 \section{Discussion}

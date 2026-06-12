@@ -35,7 +35,7 @@
 \@writefile{toc}{\contentsline {section}{\numberline {3}Problem Formulation}{2}{section.3}\protected@file@percent }
 \citation{kim2022revin}
 \citation{vaswani2017attention}
-\newlabel{eq:masked_nll}{{2}{3}{Problem Formulation}{equation.2}{}}
+\newlabel{eq:masked_nll}{{2}{3}{Problem Formulation}{equation.3.2}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {4}REnFormer Architecture}{3}{section.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Per-Window Reversible Normalisation}{3}{subsection.4.1}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Input Encoding}{3}{subsection.4.2}\protected@file@percent }
@@ -49,23 +49,18 @@
 \newlabel{tab:hparams}{{1}{4}{REnFormer hyperparameters}{table.1}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {5}Experiments}{4}{section.5}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Dataset: SEN Chile}{4}{subsection.5.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Comparison Protocol}{4}{subsection.5.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Evaluation Metrics}{4}{subsection.5.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Highest and lowest generation sites in the test set, by season.}}{4}{figure.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Solar fleet generation heatmap by month and hour.}}{5}{figure.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Comparison Protocol}{5}{subsection.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Evaluation Metrics}{5}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Main Results}{5}{subsection.5.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Scaling with Fleet Size}{5}{subsection.5.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.6}Ablation Study}{5}{subsection.5.6}\protected@file@percent }
 \citation{tan2024useful}
 \citation{shen2025svtime,birkel2025tinytsm}
 \citation{dange2025tfmadapter}
 \citation{he2025sempo}
 \citation{fan2025smetimes,birkel2025tinytsm}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Main Results}{5}{subsection.5.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Scaling with Fleet Size}{5}{subsection.5.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.6}Ablation Study}{5}{subsection.5.6}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Probabilistic quality (CRPS, lower is better) versus fleet size. REnFormer-Skip (solid) sits below TimesFM~2.5 zero-shot (dashed) at every fleet size; the metric level tracks the mix of plant capacities added as $N$ grows, not a monotone trend.}}{5}{figure.2}\protected@file@percent }
-\newlabel{fig:scaling}{{2}{5}{Probabilistic quality (CRPS, lower is better) versus fleet size. REnFormer-Skip (solid) sits below TimesFM~2.5 zero-shot (dashed) at every fleet size; the metric level tracks the mix of plant capacities added as $N$ grows, not a monotone trend}{figure.2}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {6}Discussion}{5}{section.6}\protected@file@percent }
-\citation{tan2024useful,fan2025smetimes,birkel2025tinytsm}
-\bibstyle{IEEEtran}
-\bibdata{renformer}
-\bibcite{das2024timesfm}{1}
 \@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Full-fleet test-set comparison (291 sites, 507 non-overlapping windows per site, non-trivial steps only). MAE/RMSE/CRPS in MW.}}{6}{table.2}\protected@file@percent }
 \newlabel{tab:main_results}{{2}{6}{Full-fleet test-set comparison (291 sites, 507 non-overlapping windows per site, non-trivial steps only). MAE/RMSE/CRPS in MW}{table.2}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Scaling sweep over fleet size $N$. R-S = REnFormer-Skip, TFM = TimesFM 2.5 zero-shot. Best per row in \textbf  {bold}.}}{6}{table.3}\protected@file@percent }
@@ -74,13 +69,21 @@
 \newlabel{tab:ablation}{{4}{6}{Architecture variants, full sliding-window test set (3.53M windows, 24h horizon)}{table.4}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Architecture variants, Last 168-hour window 24-hour forecast.}}{6}{table.5}\protected@file@percent }
 \newlabel{tab:ablation2}{{5}{6}{Architecture variants, Last 168-hour window 24-hour forecast}{table.5}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {7}Conclusion}{6}{section.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Discussion}{6}{section.6}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Probabilistic quality (CRPS, lower is better) versus fleet size. REnFormer-Skip (solid) sits below TimesFM~2.5 zero-shot (dashed) at every fleet size; the metric level tracks the mix of plant capacities added as $N$ grows, not a monotone trend.}}{6}{figure.4}\protected@file@percent }
+\newlabel{fig:scaling}{{4}{6}{Probabilistic quality (CRPS, lower is better) versus fleet size. REnFormer-Skip (solid) sits below TimesFM~2.5 zero-shot (dashed) at every fleet size; the metric level tracks the mix of plant capacities added as $N$ grows, not a monotone trend}{figure.4}{}}
+\citation{tan2024useful,fan2025smetimes,birkel2025tinytsm}
+\bibstyle{IEEEtran}
+\bibdata{renformer}
+\bibcite{das2024timesfm}{1}
 \bibcite{zhang2024survey}{2}
 \bibcite{liu2024autotimes}{3}
 \bibcite{niu2025langtime}{4}
 \bibcite{katharakis2025slm}{5}
 \bibcite{tan2024useful}{6}
 \bibcite{fan2025smetimes}{7}
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Last-window 24 h forecast for one site from three models.}}{7}{figure.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Conclusion}{7}{section.7}\protected@file@percent }
 \bibcite{shen2025svtime}{8}
 \bibcite{birkel2025tinytsm}{9}
 \bibcite{he2025sempo}{10}

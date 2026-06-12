@@ -11,6 +11,8 @@ import warnings
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import scienceplots
+plt.style.use(['science','ieee'])
 import matplotlib.dates as mdates
 import seaborn as sns
 
@@ -20,7 +22,7 @@ sns.set_theme(style="whitegrid", palette="tab10")
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-DATA_FILE = "data/Descarga_Generación_Real_2026-05-29_18-57-56.csv"
+DATA_FILE = "data/data.csv"
 FIG_DIR = "docs/eda"
 os.makedirs(FIG_DIR, exist_ok=True)
 
@@ -100,7 +102,7 @@ ax.set_ylabel("Missing (%)")
 ax.set_title("Missing values per hour across all plants")
 ax.set_xticks(range(1, 25))
 plt.tight_layout()
-fig.savefig(f"{FIG_DIR}/01_missing_by_hour.png", dpi=120)
+fig.savefig(f"{FIG_DIR}/01_missing_by_hour.pdf", dpi=300)
 plt.close()
 
 
@@ -126,7 +128,7 @@ ax.set_ylabel("GWh/day (7-day rolling mean)")
 ax.set_title("Daily Generation by Technology (SEN Chile 2021–2026)")
 ax.legend(loc="upper left", fontsize=9)
 plt.tight_layout()
-fig.savefig(f"{FIG_DIR}/02_daily_generation_by_tipo.png", dpi=120)
+fig.savefig(f"{FIG_DIR}/02_daily_generation_by_tipo.pdf", dpi=300)
 plt.close()
 
 
@@ -164,7 +166,7 @@ axes[1].xaxis.set_major_locator(mdates.MonthLocator(interval=3))
 plt.xticks(rotation=45)
 axes[1].set_xlabel("Month")
 plt.tight_layout()
-fig.savefig(f"{FIG_DIR}/03_monthly_generation_mix.png", dpi=120)
+fig.savefig(f"{FIG_DIR}/03_monthly_generation_mix.pdf", dpi=300)
 plt.close()
 
 
@@ -199,7 +201,7 @@ for tipo in ["Solar", "Eólicas"]:
     ax.legend()
     plt.tight_layout()
     fname = tipo.lower().replace("é", "e")
-    fig.savefig(f"{FIG_DIR}/04_diurnal_{fname}.png", dpi=120)
+    fig.savefig(f"{FIG_DIR}/04_diurnal_{fname}.pdf", dpi=300)
     plt.close()
 
 
@@ -221,7 +223,7 @@ ax.set_ylabel("99th-percentile daily total MW")
 ax.set_title("Fleet peak generation proxy (P99) by year")
 ax.legend()
 plt.tight_layout()
-fig.savefig(f"{FIG_DIR}/05_peak_proxy_by_year.png", dpi=120)
+fig.savefig(f"{FIG_DIR}/05_peak_proxy_by_year.pdf", dpi=300)
 plt.close()
 
 
@@ -239,7 +241,7 @@ if "Solar" in daily_pivot.columns and "Eólicas" in daily_pivot.columns:
     corr = daily_pivot[["Solar", "Eólicas"]].corr().iloc[0, 1]
     ax.text(0.05, 0.92, f"r = {corr:.3f}", transform=ax.transAxes, fontsize=11)
     plt.tight_layout()
-    fig.savefig(f"{FIG_DIR}/06_solar_vs_wind_scatter.png", dpi=120)
+    fig.savefig(f"{FIG_DIR}/06_solar_vs_wind_scatter.pdf", dpi=300)
     plt.close()
 
 
@@ -255,7 +257,7 @@ for ax, tipo in zip(axes, RENEWABLE_TYPES):
     ax.set_ylabel("Density" if ax == axes[0] else "")
 fig.suptitle("Hourly generation distribution by renewable type", y=1.02)
 plt.tight_layout()
-fig.savefig(f"{FIG_DIR}/07_hourly_distribution_renewables.png", dpi=120, bbox_inches="tight")
+fig.savefig(f"{FIG_DIR}/07_hourly_distribution_renewables.pdf", dpi=300, bbox_inches="tight")
 plt.close()
 
 
@@ -276,7 +278,7 @@ for tipo in ["Solar", "Eólicas"]:
     ax.set_title(f"Top 10 {tipo} plants by mean hourly generation")
     plt.tight_layout()
     fname = tipo.lower().replace("é", "e")
-    fig.savefig(f"{FIG_DIR}/08_top10_{fname}.png", dpi=120)
+    fig.savefig(f"{FIG_DIR}/08_top10_{fname}.pdf", dpi=300)
     plt.close()
 
 
@@ -300,9 +302,8 @@ sns.heatmap(
 )
 ax.set_xlabel("Hour of day")
 ax.set_ylabel("Month")
-ax.set_title("Solar fleet — mean hourly generation by month × hour")
 plt.tight_layout()
-fig.savefig(f"{FIG_DIR}/09_solar_heatmap_month_hour.png", dpi=120)
+fig.savefig(f"{FIG_DIR}/09_solar_heatmap_month_hour.pdf", dpi=300)
 plt.close()
 
 print(f"\nAll figures saved to {FIG_DIR}/")
