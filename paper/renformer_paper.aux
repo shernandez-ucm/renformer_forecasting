@@ -35,7 +35,7 @@
 \@writefile{toc}{\contentsline {section}{\numberline {3}Problem Formulation}{2}{section.3}\protected@file@percent }
 \citation{kim2022revin}
 \citation{vaswani2017attention}
-\newlabel{eq:masked_nll}{{2}{3}{Problem Formulation}{equation.3.2}{}}
+\newlabel{eq:masked_nll}{{2}{3}{Problem Formulation}{equation.2}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {4}REnFormer Architecture}{3}{section.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Per-Window Reversible Normalisation}{3}{subsection.4.1}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Input Encoding}{3}{subsection.4.2}\protected@file@percent }
@@ -43,33 +43,38 @@
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Probabilistic Forecast Head}{3}{subsection.4.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Training}{3}{subsection.4.5}\protected@file@percent }
 \citation{das2024timesfm,katharakis2025slm}
-\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces REnFormer architecture. A shared encoder processes each site's lookback window independently; the last token is pooled and projected to Gaussian parameters for the forecast horizon, then de-normalised back to MW. Total: 536\,k parameters.}}{4}{figure.1}\protected@file@percent }
-\newlabel{fig:architecture}{{1}{4}{REnFormer architecture. A shared encoder processes each site's lookback window independently; the last token is pooled and projected to Gaussian parameters for the forecast horizon, then de-normalised back to MW. Total: 536\,k parameters}{figure.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces REnFormer architecture. A shared encoder processes each site's lookback window independently. Each raw-MW window is renormalised by its own statistics, projected and position-encoded, passed through $L$ post-LayerNorm Transformer blocks, and re-combined with the projected input via a macro skip connection (dashed). The last token is pooled and projected to Gaussian parameters for the forecast horizon, then de-normalised back to MW. Total: 536\,k parameters.}}{4}{figure.1}\protected@file@percent }
+\newlabel{fig:architecture}{{1}{4}{REnFormer architecture. A shared encoder processes each site's lookback window independently. Each raw-MW window is renormalised by its own statistics, projected and position-encoded, passed through $L$ post-LayerNorm Transformer blocks, and re-combined with the projected input via a macro skip connection (dashed). The last token is pooled and projected to Gaussian parameters for the forecast horizon, then de-normalised back to MW. Total: 536\,k parameters}{figure.1}{}}
 \@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces REnFormer hyperparameters.}}{4}{table.1}\protected@file@percent }
 \newlabel{tab:hparams}{{1}{4}{REnFormer hyperparameters}{table.1}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {5}Experiments}{4}{section.5}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Dataset: SEN Chile}{4}{subsection.5.1}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Comparison Protocol}{4}{subsection.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Evaluation Metrics}{4}{subsection.5.3}\protected@file@percent }
 \citation{tan2024useful}
 \citation{shen2025svtime,birkel2025tinytsm}
 \citation{dange2025tfmadapter}
 \citation{he2025sempo}
 \citation{fan2025smetimes,birkel2025tinytsm}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Evaluation Metrics}{5}{subsection.5.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Main Results: Small Specialist vs.\ Foundation Model}{5}{subsection.5.4}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Full-fleet test-set comparison (291 sites, 507 non-overlapping windows per site, non-trivial steps only). MAE/RMSE/CRPS in MW.}}{5}{table.2}\protected@file@percent }
-\newlabel{tab:main_results}{{2}{5}{Full-fleet test-set comparison (291 sites, 507 non-overlapping windows per site, non-trivial steps only). MAE/RMSE/CRPS in MW}{table.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Main Results}{5}{subsection.5.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Scaling with Fleet Size}{5}{subsection.5.5}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Scaling sweep over fleet size $N$. R-S = REnFormer-Skip, TFM = TimesFM 2.5 zero-shot. Best per row in \textbf  {bold}.}}{5}{table.3}\protected@file@percent }
-\newlabel{tab:scaling}{{3}{5}{Scaling sweep over fleet size $N$. R-S = REnFormer-Skip, TFM = TimesFM 2.5 zero-shot. Best per row in \textbf {bold}}{table.3}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.6}Base vs.\ Skip Variant}{5}{subsection.5.6}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Architecture variants, full sliding-window test set (3.53M windows, 24h horizon).}}{5}{table.4}\protected@file@percent }
-\newlabel{tab:ablation}{{4}{5}{Architecture variants, full sliding-window test set (3.53M windows, 24h horizon)}{table.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.6}Ablation Study}{5}{subsection.5.6}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Probabilistic quality (CRPS, lower is better) versus fleet size. REnFormer-Skip (solid) sits below TimesFM~2.5 zero-shot (dashed) at every fleet size; the metric level tracks the mix of plant capacities added as $N$ grows, not a monotone trend.}}{5}{figure.2}\protected@file@percent }
+\newlabel{fig:scaling}{{2}{5}{Probabilistic quality (CRPS, lower is better) versus fleet size. REnFormer-Skip (solid) sits below TimesFM~2.5 zero-shot (dashed) at every fleet size; the metric level tracks the mix of plant capacities added as $N$ grows, not a monotone trend}{figure.2}{}}
 \@writefile{toc}{\contentsline {section}{\numberline {6}Discussion}{5}{section.6}\protected@file@percent }
 \citation{tan2024useful,fan2025smetimes,birkel2025tinytsm}
 \bibstyle{IEEEtran}
 \bibdata{renformer}
 \bibcite{das2024timesfm}{1}
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Full-fleet test-set comparison (291 sites, 507 non-overlapping windows per site, non-trivial steps only). MAE/RMSE/CRPS in MW.}}{6}{table.2}\protected@file@percent }
+\newlabel{tab:main_results}{{2}{6}{Full-fleet test-set comparison (291 sites, 507 non-overlapping windows per site, non-trivial steps only). MAE/RMSE/CRPS in MW}{table.2}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Scaling sweep over fleet size $N$. R-S = REnFormer-Skip, TFM = TimesFM 2.5 zero-shot. Best per row in \textbf  {bold}.}}{6}{table.3}\protected@file@percent }
+\newlabel{tab:scaling}{{3}{6}{Scaling sweep over fleet size $N$. R-S = REnFormer-Skip, TFM = TimesFM 2.5 zero-shot. Best per row in \textbf {bold}}{table.3}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Architecture variants, full sliding-window test set (3.53M windows, 24h horizon).}}{6}{table.4}\protected@file@percent }
+\newlabel{tab:ablation}{{4}{6}{Architecture variants, full sliding-window test set (3.53M windows, 24h horizon)}{table.4}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Architecture variants, Last 168-hour window 24-hour forecast.}}{6}{table.5}\protected@file@percent }
+\newlabel{tab:ablation2}{{5}{6}{Architecture variants, Last 168-hour window 24-hour forecast}{table.5}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {7}Conclusion}{6}{section.7}\protected@file@percent }
 \bibcite{zhang2024survey}{2}
 \bibcite{liu2024autotimes}{3}
 \bibcite{niu2025langtime}{4}
@@ -80,7 +85,6 @@
 \bibcite{birkel2025tinytsm}{9}
 \bibcite{he2025sempo}{10}
 \bibcite{dange2025tfmadapter}{11}
-\@writefile{toc}{\contentsline {section}{\numberline {7}Conclusion}{6}{section.7}\protected@file@percent }
 \bibcite{torres2019bigdata}{12}
 \bibcite{jang2024multisite}{13}
 \bibcite{dimitriadis2025multicountry}{14}
@@ -92,4 +96,4 @@
 \bibcite{bai2025dma}{20}
 \bibcite{kim2022revin}{21}
 \bibcite{vaswani2017attention}{22}
-\gdef \@abspage@last{7}
+\gdef \@abspage@last{8}

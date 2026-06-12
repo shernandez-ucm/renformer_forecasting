@@ -16,17 +16,22 @@
 \usepackage{algorithm}
 \usepackage{algorithmic}
 \usepackage{balance}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
 
 % -----------------------------------------------------------------------
 % Title
 % -----------------------------------------------------------------------
-\title{\textbf{Small but Specialized: A 0.5M-Parameter Domain-Specific
-Transformer Rivals a 231M Time-Series Foundation Model for Multi-Site
-Solar Power Forecasting}}
+\title{\textbf{REnFormer} : A Domain-Specific
+Transformer for Multi-Site Solar Power Forecasting}
 
 \author{
-  Anonymous Author(s)\\
-  \texttt{anonymous@institution.edu}
+  Sergio Hernández\\
+  Facultad de Ciencias de la Ingniería\\
+  Universidad Católica del Maule\\
+  \texttt{shernandez@ucm.cl}
 }
 
 \date{}
@@ -38,7 +43,7 @@ Solar Power Forecasting}}
 % Abstract
 % -----------------------------------------------------------------------
 \begin{abstract}
-Time-series foundation models (TSFMs) such as TimesFM promise accurate
+Time-series foundation models (TSFMs) promise accurate
 zero-shot forecasting from a single large pre-trained network, and recent
 studies report that they outperform classical baselines even in
 specialised domains. We ask whether this scale is necessary when abundant
@@ -47,18 +52,17 @@ domain-specific Transformer (536\,k parameters) for probabilistic
 multi-site solar power forecasting, trained on 291 photovoltaic plants
 from Chile's national electricity system (SEN) covering 5.4 years of
 hourly generation. REnFormer combines per-window reversible instance
-normalisation---mirroring the input scaling of TSFMs---with a shared
-encoder, a macro skip connection, and a Gaussian output head trained with
+normalisation with a shared encoder, a macro skip connection, and a Gaussian output head trained with
 a \emph{masked negative log-likelihood} that concentrates learning on
-non-trivial generation steps. In a like-for-like evaluation against
+non-trivial generation steps. The proposed model is compared against
 TimesFM~2.5 (231M parameters, zero-shot) over fleet sizes from 10 to 291
 sites, REnFormer matches the foundation model on MAE at full fleet scale
 (1.936 vs.\ 1.936\,MW) and improves RMSE by 3.2\% and CRPS by 5.1\%,
 while using $431\times$ fewer parameters and running $\sim$640$\times$
-faster per forecast (0.037\,ms vs.\ 24\,ms). The probabilistic advantage
+faster per forecast (0.036\,ms vs.\ 23.0\,ms). The probabilistic advantage
 holds at \emph{every} fleet size evaluated. Our results add domain-specific
 evidence to a growing literature suggesting that small, specialised
-forecasting models remain a Pareto-optimal choice when in-domain history
+forecasting models remain a competitive choice when enough in-domain data
 exists, relegating TSFMs to cold-start and data-scarce regimes.
 \end{abstract}
 
@@ -118,7 +122,7 @@ contributions are:
     on non-trivial generation steps ($>0.1$\,MW), directly addressing
     the intermittency structure that generic foundation models must
     handle implicitly.
-  \item A \textbf{like-for-like comparison against TimesFM~2.5
+  \item A \textbf{direct comparison against TimesFM~2.5
     zero-shot} on identical test windows across fleet sizes from 10 to
     291 sites. At full fleet scale REnFormer matches the foundation
     model on MAE and improves RMSE (3.2\%) and CRPS (5.1\%), at
@@ -238,19 +242,47 @@ division by zero on all-dark batches.
 
 \begin{figure*}[t]
   \centering
-  % Replace with actual architecture figure
-  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2cm}
-    [Architecture diagram: raw-MW input $\rightarrow$ per-window instance
-    normalisation $\rightarrow$ input projection $\rightarrow$ sinusoidal PE
-    $\rightarrow$ $L$ Transformer blocks with macro skip connection
-    $\rightarrow$ last-token pooling
-    $\rightarrow$ Gaussian head ($\boldsymbol{\mu}$, $\log\boldsymbol{\sigma}$)
-    $\rightarrow$ inverse normalisation to MW]
-    \vspace{2cm}}}
+  \resizebox{\textwidth}{!}{%
+  \begin{tikzpicture}[
+    node distance=6mm,
+    box/.style={draw, rounded corners, minimum height=12mm,
+                minimum width=18mm, align=center, font=\footnotesize,
+                thick},
+    io/.style={box, fill=gray!12},
+    enc/.style={box, fill=blue!8},
+    head/.style={box, fill=orange!15},
+    arr/.style={-{Latex[length=2.2mm]}, thick},
+  ]
+    \node[io]                 (in)   {Raw-MW\\window\\$\mathbf{x}_s\!\in\!\mathbb{R}^{T\times F}$};
+    \node[enc, right=of in]   (norm) {Per-window\\instance\\norm};
+    \node[enc, right=of norm] (proj) {Linear proj.\\$\mathbf{W}_{\text{in}}$\\$+$ sinus.\ PE};
+    \node[enc, right=of proj] (block){$L\times$\\Transformer\\block\\\scriptsize(MHSA\,+\,FFN)};
+    \node[enc, right=of block](skip) {Macro-skip\\LayerNorm\\\scriptsize$(\cdot+\mathbf{H}^{(0)})$};
+    \node[enc, right=of skip] (pool) {Last-token\\pooling};
+    \node[head, right=of pool](gh)   {Gaussian\\head\\$\boldsymbol{\mu},\log\boldsymbol{\sigma}$};
+    \node[enc, right=of gh]   (inv)  {Inverse\\norm\\$\to$ MW};
+    \node[io, right=of inv]   (out)  {Forecast\\$(\boldsymbol{\mu},\boldsymbol{\sigma})\!\in\!\mathbb{R}^{H}$};
+
+    \draw[arr] (in)   -- (norm);
+    \draw[arr] (norm) -- (proj);
+    \draw[arr] (proj) -- (block);
+    \draw[arr] (block)-- (skip);
+    \draw[arr] (skip) -- (pool);
+    \draw[arr] (pool) -- (gh);
+    \draw[arr] (gh)   -- (inv);
+    \draw[arr] (inv)  -- (out);
+    % macro skip connection: projected+PE representation re-injected after the blocks
+    \draw[arr, dashed] (proj.north) to[out=55, in=125]
+      node[above, font=\scriptsize] {macro skip $\mathbf{H}^{(0)}$} (skip.north);
+  \end{tikzpicture}%
+  }
   \caption{REnFormer architecture. A shared encoder processes each site's
-    lookback window independently; the last token is pooled and projected
-    to Gaussian parameters for the forecast horizon, then de-normalised
-    back to MW. Total: 536\,k parameters.}
+    lookback window independently. Each raw-MW window is renormalised by its
+    own statistics, projected and position-encoded, passed through $L$
+    post-LayerNorm Transformer blocks, and re-combined with the projected
+    input via a macro skip connection (dashed). The last token is pooled and
+    projected to Gaussian parameters for the forecast horizon, then
+    de-normalised back to MW. Total: 536\,k parameters.}
   \label{fig:architecture}
 \end{figure*}
 
@@ -281,10 +313,10 @@ $\mathbb{R}^{d}$ ($F$ input channels, model dimension $d$):
   \quad \mathbf{W}_{\text{in}} \in \mathbb{R}^{d \times F}.
 \end{equation}
 Sinusoidal positional encodings~\cite{vaswani2017attention} are then added:
-\begin{equation}
-  \text{PE}_{(t,2k)} = \sin\!\left(\frac{t}{10000^{2k/d}}\right), \quad
+\begin{align}
+  \text{PE}_{(t,2k)} = \sin\!\left(\frac{t}{10000^{2k/d}}\right),\\
   \text{PE}_{(t,2k+1)} = \cos\!\left(\frac{t}{10000^{2k/d}}\right).
-\end{equation}
+\end{align}
 
 \subsection{Transformer Encoder with Macro Skip Connection}
 
@@ -369,8 +401,8 @@ Table~\ref{tab:hparams} lists the full configuration.
 
 \subsection{Dataset: SEN Chile}
 
-We evaluate on the \emph{Descarga Generaci\'on Real} dataset published by
-Chile's National Energy Coordinator (CEN), covering the national
+We evaluate on the \emph{Generaci\'on Real} dataset published by
+Chile's National Energy Coordinator (CEN\footnote{\url{https://www.coordinador.cl/operacion/graficos/operacion-real/generacion-real/}}), covering the national
 electricity system (SEN) from 2021-01-01 to 2026-05-29. The raw export
 contains 817 grid-connected solar units; after removing sites with more
 than 10\% missing hours, the corpus contains:
@@ -421,17 +453,17 @@ where $F$ is the predicted CDF. We additionally report parameter count
 and wall-clock inference latency per 24-hour forecast (ms/forecast) on
 identical hardware.
 
-\subsection{Main Results: Small Specialist vs.\ Foundation Model}
+\subsection{Main Results}
 
 Table~\ref{tab:main_results} reports the full-fleet (291 sites)
 comparison. REnFormer-Skip matches TimesFM~2.5 on MAE to three decimal
 places while improving RMSE by 3.2\% and CRPS by 5.1\%---with
-$431\times$ fewer parameters and $\sim$650$\times$ lower per-forecast
+$431\times$ fewer parameters and $\sim$640$\times$ lower per-forecast
 latency. Forecasting the entire national fleet for the full 17-month
 test period takes 5.3\,s for REnFormer versus 57 minutes for TimesFM on
 the same GPU.
 
-\begin{table}[h]
+\begin{table*}[h]
   \centering
   \caption{Full-fleet test-set comparison (291 sites, 507 non-overlapping
     windows per site, non-trivial steps only). MAE/RMSE/CRPS in MW.}
@@ -445,14 +477,14 @@ the same GPU.
       \textbf{1.376} & \textbf{0.54M} & \textbf{0.036} \\
     \bottomrule
   \end{tabular}
-\end{table}
+\end{table*}
 
 \subsection{Scaling with Fleet Size}
 
 Table~\ref{tab:scaling} sweeps the comparison from 10 to 291 sites.
 Three observations stand out. First, REnFormer's \emph{probabilistic}
 advantage is systematic: it achieves lower CRPS and RMSE than TimesFM at
-all seven fleet sizes. Second, on MAE the two models are within noise of
+all seven fleet sizes (Fig.~\ref{fig:scaling}). Second, on MAE the two models are within noise of
 each other at every scale except the smallest subset, where REnFormer is
 10.3\% better---the first sites in the fleet ordering are
 well-represented in training and the specialist exploits them. Third,
@@ -484,9 +516,40 @@ compounds to nearly an hour of GPU time at fleet scale.
   \end{tabular}
 \end{table}
 
-\subsection{Base vs.\ Skip Variant}
+\begin{figure}[t]
+  \centering
+  \begin{tikzpicture}
+    \begin{axis}[
+      width=\columnwidth, height=5.4cm,
+      xlabel={Fleet size $N$ (sites)},
+      ylabel={CRPS (MW)},
+      xmin=0, xmax=300,
+      legend pos=north west,
+      legend style={font=\footnotesize, draw=none, fill=none},
+      grid=both, grid style={gray!18},
+      tick label style={font=\footnotesize},
+      label style={font=\footnotesize},
+      mark size=2pt,
+    ]
+      \addplot[blue, thick, mark=*] coordinates {
+        (10,0.392) (60,0.734) (110,0.579) (160,1.299)
+        (210,1.626) (260,1.439) (291,1.376) };
+      \addplot[red, thick, dashed, mark=square*] coordinates {
+        (10,0.470) (60,0.782) (110,0.633) (160,1.368)
+        (210,1.705) (260,1.517) (291,1.450) };
+      \legend{REnFormer-Skip, TimesFM 2.5}
+    \end{axis}
+  \end{tikzpicture}
+  \caption{Probabilistic quality (CRPS, lower is better) versus fleet size.
+    REnFormer-Skip (solid) sits below TimesFM~2.5 zero-shot (dashed) at every
+    fleet size; the metric level tracks the mix of plant capacities added as
+    $N$ grows, not a monotone trend.}
+  \label{fig:scaling}
+\end{figure}
 
-On the full sliding-window test set, the base RevIN variant and the
+\subsection{Ablation Study}
+
+On the full sliding-window test set, the base variant and the
 skip variant are statistically indistinguishable (Table~\ref{tab:ablation}),
 indicating that at this model size the per-window renormalisation---not
 the specific encoder topology---carries most of the specialisation
@@ -502,11 +565,31 @@ as it was marginally stronger on the most recent held-out window.
     \toprule
     Variant & MAE & RMSE & CRPS \\
     \midrule
-    REnFormer (RevIN)        & \textbf{1.846} & \textbf{6.174} & \textbf{1.322} \\
+    REnFormer (Base)        & \textbf{1.846} & \textbf{6.174} & \textbf{1.322} \\
     REnFormer-Skip           & 1.851 & 6.175 & 1.323 \\
     \bottomrule
   \end{tabular}
 \end{table}
+
+Now focusing on the most recent 168-hour window (the last test window for each site), the skip variant's macro residual gives it a clear edge over the base
+variant,suggesting that direct access to the normalised input pattern is helpful for forecasting the next day. A regime where the diurnal pattern is strong and the model can
+exploit the resemblance between recent days and the next day. This is the variant we use for the foundation-model comparison, and the one we recommend for operational use.
+
+\begin{table}[h]
+  \centering
+  \caption{Architecture variants,  Last 168-hour window 24-hour forecast.}
+  \label{tab:ablation2}
+  \begin{tabular}{lccc}
+    \toprule
+    Variant & MAE & RMSE & CRPS \\
+    \midrule
+    REnFormer (Base)    & 3.3131 & 9.0442 & 2.3878 \\
+    REnFormer-Skip & \textbf{3.0899} & \textbf{8.1277} & \textbf{2.1354} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+
 
 % -----------------------------------------------------------------------
 \section{Discussion}
@@ -552,7 +635,17 @@ therefore weather-blind, and adding irradiance forecasts would likely
 benefit both. The TimesFM comparison is zero-shot: fine-tuning the
 foundation model on SEN data would narrow the accuracy gap at the cost
 of its main selling point (no training) while leaving the
-431$\times$ parameter and inference gap intact. Finally, our fleet-size
+431$\times$ parameter and inference gap intact. Relatedly, our
+comparison conflates two axes: REnFormer is an encoder-only model trained
+from scratch, whereas TimesFM is a decoder-only model pre-trained as a
+foundation model. The encoder-only design grants bidirectional attention
+over the full lookback and emits the 24\,h horizon in a single pass,
+avoiding the autoregressive error accumulation and sequential decoding of
+TimesFM; the decoder-only design, conversely, enables the large-scale
+next-token pre-training behind its zero-shot generalisation and flexible
+horizon. The architectural effect (bidirectional, direct-horizon vs.\
+causal, autoregressive) and the training-regime effect (specialist vs.\
+pre-trained) are thus entangled. Finally, our fleet-size
 sweep uses a fixed site ordering; metric levels across $N$ reflect the
 mix of plant sizes added, not a pure scaling law.
 
@@ -572,7 +665,7 @@ work~\cite{tan2024useful,fan2025smetimes,birkel2025tinytsm}, our results
 add grid-scale, operationally grounded evidence: when in-domain history
 is abundant, a small Transformer with the right domain structure---
 per-window reversible normalisation and intermittency-masked
-likelihood---remains the Pareto-optimal choice, with foundation models
+likelihood---remains a competitive choice, with foundation models
 best reserved for cold-start and data-scarce regimes. Code and
 pre-trained weights will be released upon acceptance.
 
